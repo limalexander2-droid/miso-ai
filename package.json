@@ -4,5 +4,22 @@
   "type": "module",
   "dependencies": {
     "node-fetch": "^3.3.2"
-  }
+  },
+  "version": "1.0.0",
+  "description": "",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/limalexander2-droid/miso-ai.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/limalexander2-droid/miso-ai/issues"
+  },
+  "homepage": "https://github.com/limalexander2-droid/miso-ai#readme"
 }
