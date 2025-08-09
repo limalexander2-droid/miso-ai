@@ -1,6 +1,4 @@
 // netlify/functions/yelp-search.js
-import fetch from "node-fetch";
-
 const YELP_API = "https://api.yelp.com/v3/businesses/search";
 
 export const handler = async (event) => {
