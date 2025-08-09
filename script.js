@@ -281,13 +281,21 @@ function renderRestaurants(biz = []) {
    SHOW RESULTS
 ============================== */
 async function showResults() {
+  // Finish quiz progress
   const qBar = document.getElementById("question-progress");
-  if (qBar) { qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
+  if (qBar) {
+    qBar.style.width = "100%";
+    qBar.parentElement?.setAttribute("aria-valuenow", "100");
+  }
+
+  // Show loading screen + play sound
   quizContainer.classList.add("hidden");
-  document.getElementById("miso-sound")?.play().catch(()=>{});
+  document.getElementById("miso-sound")?.play().catch(() => {});
   loadingContainer.classList.remove("hidden");
   const progressBar = document.getElementById("progress-bar");
-  if (progressBar) { progressBar.style.width = "100%"; }
+  if (progressBar) progressBar.style.width = "100%";
+
+  // Animated loading text/emoji
   const loadingText = loadingContainer.querySelector("p");
   const loadingEmoji = document.getElementById("loading-emoji");
   let messageIndex = 0;
@@ -300,28 +308,54 @@ async function showResults() {
   updateLoadingMessage();
   const messageInterval = setInterval(updateLoadingMessage, 800);
 
+  // Compose Yelp payload
   const yelpParams = mapAnswersToYelp(answers);
   const loc = await getUserLocationOrPrompt();
   const payload = { ...yelpParams, ...loc };
+
+  // Fire Yelp request in background
   const fetchPromise = fetch("/.netlify/functions/yelp-search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
-  }).then(res => res.json()).then(data => data.businesses || []).catch(() => []);
+  })
+    .then((res) => res.json())
+    .then((data) => data.businesses || [])
+    .catch(() => []);
 
+  // Wait ~2.8s for UX, then reveal results
   setTimeout(async () => {
     clearInterval(messageInterval);
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
+
+    // 🔁 Force results header/subtitle (replace the loading copy)
+    const h2 = resultContainer.querySelector("h2");
+    const sub = resultContainer.querySelector("p");
+    if (h2) h2.textContent = "Here are your matches";
+    if (sub) sub.textContent = "Based on your picks and location.";
+
+    // 📋 Show or hide the selected-answers summary
     const display = document.getElementById("results-display");
     if (display) {
-      display.innerHTML = answers.map(a => `<p><strong>${a.question}</strong><br><span class="text-rose-600">→ ${a.answer}</span></p>`).join("<hr class='my-2' />");
-      display.scrollTop = 0;
+      if (typeof SHOW_ANSWER_SUMMARY !== "undefined" && SHOW_ANSWER_SUMMARY) {
+        display.classList.remove("hidden");
+        display.innerHTML = answers
+          .map(a => `<p><strong>${a.question}</strong><br><span class="text-rose-600">→ ${a.answer}</span></p>`)
+          .join("<hr class='my-2' />");
+        display.scrollTop = 0;
+      } else {
+        display.classList.add("hidden");
+        display.innerHTML = "";
+      }
     }
+
+    // Render businesses
     const businesses = await fetchPromise;
     renderRestaurants(prioritizeMatches(businesses, yelpParams.negativeHints));
   }, 2800);
 }
+
 
 /* ==============================
    RESTART
