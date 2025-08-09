@@ -9,6 +9,7 @@ const answerButtons = document.getElementById("answer-buttons");
 const resultContainer = document.getElementById("result");
 const loadingContainer = document.getElementById("loading");
 const quizContainer = document.getElementById("quiz");
+
 const loadingMessages = [
   { emoji: "🍣", text: "Plating your cravings…" },
   { emoji: "🍜", text: "Asking the kitchen for something special…" },
@@ -49,47 +50,20 @@ const questions = [
 ];
 
 /* ==============================
-   MAPPING DATA
+   KEYWORD MAPS
 ============================== */
 const cravingMap = {
-  "Spicy": [
-    "spicy","thai","korean","sichuan","indian","mexican","cajun","creole",
-    "jamaican","jerk chicken","caribbean","hot chicken","malaysian","indonesian",
-    "chinese hot pot","buffalo wings","peruvian aji","ethiopian"
-  ],
-  "Sweet": [
-    "dessert","bakery","ice cream","donuts","cookies","cakes","cupcakes","pies",
-    "pastry","macarons","churros","gelato","milk tea","bubble tea","milkshakes",
-    "pudding","chocolate"
-  ],
-  "Hot and hearty": [
-    "ramen","pho","bbq","stew","noodles","burgers","lasagna","meatloaf",
-    "fried chicken","chili","hot pot","curry","beef stew","gnocchi","baked pasta","gumbo"
-  ],
-  "Fresh and light": [
-    "salad","poke","mediterranean","sushi","spring rolls","grilled fish",
-    "ceviche","caprese","hummus","wraps","grain bowl","greek salad",
-    "fresh juice","smoothie bar"
-  ],
+  "Spicy": ["spicy","thai","korean","sichuan","indian","mexican","cajun","creole","jamaican","jerk chicken","caribbean","hot chicken","malaysian","indonesian","chinese hot pot","buffalo wings","peruvian aji","ethiopian"],
+  "Sweet": ["dessert","bakery","ice cream","donuts","cookies","cakes","cupcakes","pies","pastry","macarons","churros","gelato","milk tea","bubble tea","milkshakes","pudding","chocolate"],
+  "Hot and hearty": ["ramen","pho","bbq","stew","noodles","burgers","lasagna","meatloaf","fried chicken","chili","hot pot","curry","beef stew","gnocchi","baked pasta","gumbo"],
+  "Fresh and light": ["salad","poke","mediterranean","sushi","spring rolls","grilled fish","ceviche","caprese","hummus","wraps","grain bowl","greek salad","fresh juice","smoothie bar"],
   "No specific craving": []
 };
 const moodMap = {
-  "Energized / healthy": [
-    "healthy","salad","grain bowls","poke","mediterranean","greek","vegan",
-    "vegetarian","gluten free","wraps","smoothie","juice bar","lean protein","grill","buddha bowl"
-  ],
-  "Cozy / comfort food": [
-    "comfort food","diner","bbq","mac and cheese","fried chicken","mashed potatoes",
-    "pot pie","ramen","grilled cheese","biscuits and gravy","shepherd's pie","pancakes","waffles"
-  ],
-  "Indulgent / treat yourself": [
-    "dessert","ice cream","cake","steakhouse","lobster","seafood","chocolate",
-    "pastry","donuts","milkshake","cheesecake","truffle","fondue","fine dining"
-  ],
-  "Adventurous": [
-    "ethiopian","peruvian","filipino","mongolian","laotian","pakistani","nepalese",
-    "afghan","argentinian","brazilian","moroccan","syrian","tapas","fusion cuisine","food truck"
-  ],
+  "Energized / healthy": ["healthy","salad","grain bowls","poke","mediterranean","greek","vegan","vegetarian","gluten free","wraps","smoothie","juice bar","lean protein","grill","buddha bowl"],
+  "Cozy / comfort food": ["comfort food","diner","bbq","mac and cheese","fried chicken","mashed potatoes","pot pie","ramen","grilled cheese","biscuits and gravy","shepherd's pie","pancakes","waffles"],
+  "Indulgent / treat yourself": ["dessert","ice cream","cake","steakhouse","lobster","seafood","chocolate","pastry","donuts","milkshake","cheesecake","truffle","fondue","fine dining"],
+  "Adventurous": ["ethiopian","peruvian","filipino","mongolian","laotian","pakistani","nepalese","afghan","argentinian","brazilian","moroccan","syrian","tapas","fusion cuisine","food truck"],
   "Chill / no strong cravings": ["restaurants"]
 };
 const dietMap = {
@@ -110,7 +84,7 @@ const occasionMap = {
 };
 
 /* ==============================
-   MAPPING FUNCTION
+   ANSWERS -> YELP PARAMS
 ============================== */
 function mapAnswersToYelp(answers) {
   const get = (q) => answers.find(a => a.question.startsWith(q))?.answer || "";
@@ -151,13 +125,13 @@ function mapAnswersToYelp(answers) {
   if (occasion === "Date night" || occasion === "Celebration") sort_by = "rating";
   if (occasion === "Quick lunch break") sort_by = "distance";
 
-  const term = (parts.length ? [...new Set(parts)] : ["restaurants"])
-  .slice(0, 6) // limit to first 6 keywords to keep search focused
-  .join(" ");
+  const term = (parts.length ? [...new Set(parts)] : ["restaurants"]).slice(0, 6).join(" ");
+
   const negativeHints = [];
   if (mood === "Energized / healthy" || diet !== "No restrictions") {
     negativeHints.push("fast food","fried chicken","donut","ice cream","burger");
   }
+
   return { term, price, radius, open_now: true, sort_by, transactions, negativeHints };
 }
 
@@ -166,14 +140,22 @@ function mapAnswersToYelp(answers) {
 ============================== */
 function prioritizeMatches(businesses = [], negativeHints = []) {
   if (!negativeHints?.length) return businesses;
-  const bad = (s="") => negativeHints.some(h => s.toLowerCase().includes(h));
+
+  const bad = (s = "") => negativeHints.some(h => s.toLowerCase().includes(h));
+
   return businesses
     .map(b => {
-      const hay = [
-        b.name,
-        b.categories?.join(" "),
-        b.address || ""
-      ].join(" ").toLowerCase();
+      const catText = Array.isArray(b.categories)
+        ? b.categories.map(c => (typeof c === "string" ? c : (c.title || c.alias || ""))).join(" ")
+        : "";
+
+      const addrText = b.address
+        || [b?.location?.address1, b?.location?.city, b?.location?.state, b?.location?.zip_code]
+            .filter(Boolean).join(" ")
+        || "";
+
+      const hay = [b.name, catText, addrText].join(" ").toLowerCase();
+
       return { b, penalty: bad(hay) ? 1 : 0 };
     })
     .sort((a, z) => a.penalty - z.penalty)
@@ -186,11 +168,14 @@ function prioritizeMatches(businesses = [], negativeHints = []) {
 function showQuestion() {
   resultContainer.classList.add("hidden");
   quizContainer.classList.remove("hidden");
-  document.getElementById("progress-indicator").textContent =
-    `Question ${currentQuestion + 1} of ${questions.length}`;
+
+  const indicator = document.getElementById("progress-indicator");
+  if (indicator) indicator.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
+
   const question = questions[currentQuestion];
   container.innerHTML = `<div class="card fade-in"><div class="question">${question.question}</div></div>`;
   answerButtons.innerHTML = "";
+
   question.options.forEach(option => {
     const button = document.createElement("button");
     button.innerText = option;
@@ -202,8 +187,10 @@ function showQuestion() {
     button.addEventListener("click", () => selectAnswer(option));
     answerButtons.appendChild(button);
   });
+
   updateQuestionProgress();
 }
+
 function selectAnswer(answer) {
   answers.push({ question: questions[currentQuestion].question, answer });
   currentQuestion += 1;
@@ -213,7 +200,7 @@ function selectAnswer(answer) {
 }
 
 /* ==============================
-   GEOLOCATION
+   GEOLOCATION OR PROMPT
 ============================== */
 function getUserLocationOrPrompt() {
   return new Promise((resolve) => {
@@ -222,8 +209,7 @@ function getUserLocationOrPrompt() {
       if (val && val.trim().length >= 3) {
         resolve({ location: val.trim() });
       } else {
-        // Fallback default so we never send an empty location
-        resolve({ location: "San Antonio, TX" }); // <- change to your area if you want
+        resolve({ location: "San Antonio, TX" }); // fallback default
       }
     };
 
@@ -231,71 +217,31 @@ function getUserLocationOrPrompt() {
 
     navigator.geolocation.getCurrentPosition(
       pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => ask(), // on deny/fail, ask for city/ZIP
+      () => ask(),
       { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
     );
   });
 }
 
-
 /* ==============================
-   RENDER RESTAURANTS
-============================== */
-function renderRestaurants(biz = []) {
-  const host = document.getElementById("restaurant-results");
-  if (!host) return;
-  if (!biz.length) {
-    host.innerHTML = `<div class="p-4 border rounded-xl bg-white text-gray-600">No matches found.</div>`;
-    return;
-  }
-  host.innerHTML = biz.map(b => {
-    const miles = b.distance ? (b.distance / 1609.34).toFixed(1) + " mi" : "";
-    const cats = b.categories?.slice(0,3).join(" • ") || "";
-    const open = b.is_closed ? "Closed" : "Open now";
-    const price = b.price || "";
-    const img = b.image_url || "https://via.placeholder.com/600x400?text=Food";
-    const gmaps = b.coords?.latitude && b.coords?.longitude
-      ? `https://www.google.com/maps?q=${b.coords.latitude},${b.coords.longitude}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.name + " " + (b.address||""))}`;
-    return `
-      <article class="flex gap-3 p-3 border rounded-xl bg-white shadow-sm">
-        <img src="${img}" alt="${b.name}" class="w-24 h-24 object-cover rounded-lg">
-        <div class="flex-1 text-left">
-          <h3 class="text-lg font-semibold">${b.name}</h3>
-          <div class="text-sm text-gray-600">
-            <span>${b.rating ?? "–"}★</span> • <span>${price}</span> • <span>${cats}</span>
-            ${miles ? ` • <span>${miles}</span>` : ""} • <span class="${b.is_closed ? "text-red-600" : "text-green-600"}">${open}</span>
-          </div>
-          <div class="text-xs text-gray-500 truncate">${b.address || ""}</div>
-          <div class="mt-2 flex gap-2">
-            <a href="${b.url}" target="_blank" class="text-white text-xs font-semibold py-1 px-3 rounded-lg" style="background-color: var(--miso-accent);">View on Yelp</a>
-            <a href="${gmaps}" target="_blank" class="text-rose-700 text-xs font-semibold py-1 px-3 rounded-lg border">Directions</a>
-          </div>
-        </div>
-      </article>
-    `;
-  }).join("");
-}
-
-/* ==============================
-   SHOW RESULTS
+   RESULTS FLOW
 ============================== */
 async function showResults() {
-  // Finish quiz progress
+  // fill quiz progress
   const qBar = document.getElementById("question-progress");
   if (qBar) {
     qBar.style.width = "100%";
     qBar.parentElement?.setAttribute("aria-valuenow", "100");
   }
 
-  // Show loading screen + play sound
+  // show loading + sound
   quizContainer.classList.add("hidden");
   document.getElementById("miso-sound")?.play().catch(() => {});
   loadingContainer.classList.remove("hidden");
   const progressBar = document.getElementById("progress-bar");
   if (progressBar) progressBar.style.width = "100%";
 
-  // Animated loading text/emoji
+  // animated loading text
   const loadingText = loadingContainer.querySelector("p");
   const loadingEmoji = document.getElementById("loading-emoji");
   let messageIndex = 0;
@@ -308,12 +254,12 @@ async function showResults() {
   updateLoadingMessage();
   const messageInterval = setInterval(updateLoadingMessage, 800);
 
-  // Compose Yelp payload
+  // yelp params + location
   const yelpParams = mapAnswersToYelp(answers);
   const loc = await getUserLocationOrPrompt();
   const payload = { ...yelpParams, ...loc };
 
-  // Fire Yelp request in background
+  // fetch yelp (netlify function)
   const fetchPromise = fetch("/.netlify/functions/yelp-search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -323,19 +269,19 @@ async function showResults() {
     .then((data) => data.businesses || [])
     .catch(() => []);
 
-  // Wait ~2.8s for UX, then reveal results
+  // reveal after short delay
   setTimeout(async () => {
     clearInterval(messageInterval);
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
 
-    // 🔁 Force results header/subtitle (replace the loading copy)
+    // update header/subtitle
     const h2 = resultContainer.querySelector("h2");
     const sub = resultContainer.querySelector("p");
     if (h2) h2.textContent = "Here are your matches";
     if (sub) sub.textContent = "Based on your picks and location.";
 
-    // 📋 Show or hide the selected-answers summary
+    // optional answers summary
     const display = document.getElementById("results-display");
     if (display) {
       if (typeof SHOW_ANSWER_SUMMARY !== "undefined" && SHOW_ANSWER_SUMMARY) {
@@ -350,12 +296,11 @@ async function showResults() {
       }
     }
 
-    // Render businesses
     const businesses = await fetchPromise;
-    renderRestaurants(prioritizeMatches(businesses, yelpParams.negativeHints));
+    const prioritized = prioritizeMatches(businesses, yelpParams.negativeHints);
+    renderRestaurants(prioritized);
   }, 2800);
 }
-
 
 /* ==============================
    RESTART
@@ -368,6 +313,83 @@ document.getElementById("restart-btn")?.addEventListener("click", () => {
   showQuestion();
   updateQuestionProgress();
 });
+
+/* ==============================
+   AESTHETIC RENDERER
+============================== */
+function renderRestaurants(items){
+  const el = document.getElementById('restaurant-results');
+  if (!el) return;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    el.innerHTML = `<p class="text-gray-600 text-sm text-center">No restaurants found. Try adjusting your filters.</p>`;
+    return;
+  }
+  el.innerHTML = items.map(toCardHTML).join('');
+}
+
+function toCardHTML(r){
+  const name = escapeHTML(r.name || 'Unnamed');
+  const rating = (typeof r.rating === 'number') ? r.rating.toFixed(1) : (r.rating || '—');
+  const cats = (r.categories || []).map(c => c.title || c.name).slice(0,3).join(' • ');
+  const miles = r.distance ? (r.distance / 1609.344).toFixed(1) + ' mi' : '';
+  const addr = [
+    r?.location?.address1 || r?.vicinity || r?.formatted_address,
+    r?.location?.city, r?.location?.state, r?.location?.zip_code
+  ].filter(Boolean).join(', ');
+  const openNow = r.is_closed === false || r.opening_hours?.open_now === true;
+  const img = r.image_url || r.photos?.[0] || '';
+  const detailsUrl = r.url || r.website || '#';
+  const mapsQ = encodeURIComponent(`${name} ${addr}`);
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQ}`;
+
+  return `
+  <article class="card">
+    <img class="card__media" src="${img}" alt="${name} photo" onerror="this.style.display='none'">
+    <div class="card__body">
+      <h3 class="title">${name}</h3>
+
+      <div class="row">
+        <div class="rating"><span class="star">★</span>${rating}</div>
+        <span class="meta">• ${cats || 'Restaurant'}</span>
+        ${openNow ? `<span class="badge">Open now</span>` : ``}
+      </div>
+
+      <div class="meta">${miles}${miles && addr ? ' • ' : ''}${escapeHTML(addr)}</div>
+
+      <div class="btnrow">
+        <a class="btn btn--primary" href="${detailsUrl}" target="_blank" rel="noopener">View Details</a>
+        <a class="btn" href="${mapsUrl}" target="_blank" rel="noopener">Directions</a>
+      </div>
+    </div>
+    <div class="divider"></div>
+  </article>`;
+}
+
+function escapeHTML(str=''){
+  return String(str)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#39;');
+}
+
+/* ==============================
+   OPTIONAL: TEST DATA
+============================== */
+window.__testRestaurants = function(){
+  renderRestaurants([
+    { name:"Sample Steakhouse", rating:4.6, categories:[{title:"Steakhouses"},{title:"Bars"}],
+      distance: 402, location:{address1:"115 W San Saba Ave", city:"Menard", state:"TX", zip_code:"76859"},
+      is_closed:false, image_url:"https://picsum.photos/800/450?random=1", url:"#"
+    },
+    { name:"Taco Plaza", rating:4.3, categories:[{title:"Mexican"}],
+      distance: 1200, location:{address1:"101 Main St", city:"Menard", state:"TX", zip_code:"76859"},
+      is_closed:true, image_url:"https://picsum.photos/800/450?random=2", url:"#"
+    }
+  ]);
+};
 
 /* ==============================
    INIT
