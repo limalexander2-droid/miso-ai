@@ -151,7 +151,9 @@ function mapAnswersToYelp(answers) {
   if (occasion === "Date night" || occasion === "Celebration") sort_by = "rating";
   if (occasion === "Quick lunch break") sort_by = "distance";
 
-  const term = (parts.length ? [...new Set(parts)] : ["restaurants"]).join(" ");
+  const term = (parts.length ? [...new Set(parts)] : ["restaurants"])
+  .slice(0, 6) // limit to first 6 keywords to keep search focused
+  .join(" ");
   const negativeHints = [];
   if (mood === "Energized / healthy" || diet !== "No restrictions") {
     negativeHints.push("fast food","fried chicken","donut","ice cream","burger");
@@ -215,21 +217,26 @@ function selectAnswer(answer) {
 ============================== */
 function getUserLocationOrPrompt() {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      const location = prompt("Enter your city or ZIP:");
-      resolve({ location: location || "near me" });
-      return;
-    }
+    const ask = (msg = "Enter your city or ZIP to find restaurants nearby:") => {
+      const val = prompt(msg);
+      if (val && val.trim().length >= 3) {
+        resolve({ location: val.trim() });
+      } else {
+        // Fallback default so we never send an empty location
+        resolve({ location: "San Antonio, TX" }); // <- change to your area if you want
+      }
+    };
+
+    if (!navigator.geolocation) return ask();
+
     navigator.geolocation.getCurrentPosition(
       pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => {
-        const location = prompt("Enter your city or ZIP:");
-        resolve({ location: location || "near me" });
-      },
+      () => ask(), // on deny/fail, ask for city/ZIP
       { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
     );
   });
 }
+
 
 /* ==============================
    RENDER RESTAURANTS
