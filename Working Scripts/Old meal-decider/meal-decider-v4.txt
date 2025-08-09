@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Miso AI - What Should I Eat?</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+  <!-- Add smooth transitions -->
+  <style>
+    .fade-in {
+      animation: fadeIn 0.6s ease-out both;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-amber-50 to-rose-100 min-h-screen flex items-center justify-center px-4 py-8 font-sans">
+
+  <main id="quiz" class="w-full max-w-xl bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl p-8 space-y-6 fade-in">
+    <h1 class="text-3xl font-semibold text-center text-rose-600 mb-2">🍜 Miso AI</h1>
+    <p class="text-center text-gray-700 text-base italic">"Tell me how you feel — I’ll tell you what to eat."</p>
+
+    <div id="question-container" class="text-xl font-medium text-gray-800 text-center mt-6"></div>
+
+    <div id="answer-buttons" class="grid gap-4 mt-4"></div>
+  </main>
+
+<!-- 🌀 Loading Screen -->
+<section id="loading" class="hidden w-full max-w-xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 text-center fade-in">
+  <div class="flex flex-col items-center space-y-4">
+    <svg class="animate-spin h-10 w-10 text-rose-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+    </svg>
+    <h2 class="text-xl font-semibold text-rose-700">Miso is thinking...</h2>
+    <span id="loading-emoji" class="text-5xl animate-bounce">🍣</span>
+    <p class="text-gray-600 text-sm">Finding restaurants that match your cravings, mood, and vibe...</p>
+
+<!-- Progress Bar -->
+<div class="w-full bg-gray-200 rounded-full h-3 mt-6 overflow-hidden">
+  <div id="progress-bar" class="h-full bg-rose-500 w-0 transition-all duration-200 ease-out"></div>
+</div>
+
+  </div>
+</section>
+
+  <section id="result" class="hidden w-full max-w-xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 text-center fade-in">
+    <h2 class="text-2xl font-semibold text-rose-700 mb-2">🥢 Miso is cooking up some ideas...</h2>
+    <p class="text-gray-600 text-base">(Hang tight — we’re finding your perfect bite.)</p>
+    <!-- Restaurant suggestions will be injected here -->
+  </section>
+
+  <audio id="miso-sound" src="miso-load.mp3" preload="auto"></audio>
+
+  <script src="script.js"></script>
+</body>
+</html>
+

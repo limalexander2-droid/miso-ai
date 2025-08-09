@@ -1,0 +1,9 @@
+Miso AI is your trusted foodie companion — an app and website designed to help you decide where to eat when you're feeling indecisive.
+Instead of endlessly scrolling or debating with friends, just let Miso guide you. Through a fun and thoughtful quiz, Miso asks a series of personalized questions about your cravings, mood, time, budget, dietary goals, and more. Then, using AI and real-time restaurant data, it recommends the perfect dining spot nearby — whether you’re eating solo, ordering takeout, or planning a special night out.
+
+It’s like asking your smartest foodie friend, “Where should we eat?”
+
+
+Mission:
+Miso AI exists to simplify one of life’s daily dilemmas: where to eat. By combining thoughtful questions with smart, real-time restaurant data, we make personalized dining decisions effortless, fun, and satisfying.
+
