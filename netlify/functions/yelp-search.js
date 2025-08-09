@@ -1,3 +1,4 @@
+// netlify/functions/yelp-search.js
 import fetch from "node-fetch";
 
 const YELP_API = "https://api.yelp.com/v3/businesses/search";
@@ -17,7 +18,8 @@ export const handler = async (event) => {
   }
 
   try {
-    const {
+    const body = JSON.parse(event.body || "{}");
+    let {
       latitude,
       longitude,
       location,
@@ -27,26 +29,44 @@ export const handler = async (event) => {
       open_now = true,
       sort_by = "best_match",
       transactions = []
-    } = JSON.parse(event.body || "{}");
+    } = body;
 
     if (!process.env.YELP_API_KEY) {
       return { statusCode: 500, headers, body: JSON.stringify({ error: "Missing YELP_API_KEY in environment" }) };
     }
 
+    // Always ensure we have *some* usable location
+    const safeLocation =
+      (location && String(location).trim()) ||
+      (latitude && longitude ? null : "San Antonio, TX"); // change default if you want
+
     const buildParams = (overrides = {}) => {
       const p = new URLSearchParams();
-      if (location && !latitude && !longitude) p.set("location", location);
+
+      // location handling
       if (latitude && longitude) {
         p.set("latitude", String(latitude));
         p.set("longitude", String(longitude));
+      } else {
+        p.set("location", overrides.location ?? safeLocation);
       }
+
+      // core search fields
       p.set("term", overrides.term ?? term);
       p.set("radius", String(overrides.radius ?? radius));
-      p.set("limit", "20");
+      p.set("limit", String(overrides.limit ?? 20));
       p.set("sort_by", overrides.sort_by ?? sort_by);
-      if (price || overrides.price) p.set("price", overrides.price ?? price);
-      if (open_now !== undefined) p.set("open_now", String(overrides.open_now ?? open_now));
-      if (transactions?.length) p.set("transactions", transactions.join(","));
+
+      // optional filters
+      const usePrice = overrides.hasOwnProperty("price") ? overrides.price : price;
+      if (usePrice) p.set("price", usePrice);
+
+      const useOpen = overrides.hasOwnProperty("open_now") ? overrides.open_now : open_now;
+      if (typeof useOpen === "boolean") p.set("open_now", String(useOpen));
+
+      const useTx = overrides.hasOwnProperty("includeTransactions") ? overrides.includeTransactions : true;
+      if (useTx && transactions?.length) p.set("transactions", transactions.join(","));
+
       return p.toString();
     };
 
@@ -61,23 +81,28 @@ export const handler = async (event) => {
       return res.json();
     };
 
-    // First try
+    // First try: user's exact filters
     let data = await doFetch(buildParams());
 
-    // If no results, widen search
+    // Fallback 1: widen radius, DROP price/open_now/transactions
     if (!data?.businesses?.length) {
       data = await doFetch(buildParams({
-        radius: Math.min(16000, radius * 2 || 8000),
-        price: undefined
+        radius: Math.min(16000, (radius || 8000) * 2),
+        price: undefined,
+        open_now: undefined,
+        includeTransactions: false,
+        sort_by // keep same sort preference
       }));
     }
 
-    // If still no results, broad fallback
+    // Fallback 2: very broad term + wide radius, no hard filters
     if (!data?.businesses?.length) {
       data = await doFetch(buildParams({
         term: "restaurants",
-        radius: Math.min(16000, radius * 2 || 8000),
-        price: undefined
+        radius: Math.min(16000, (radius || 8000) * 2),
+        price: undefined,
+        open_now: undefined,
+        includeTransactions: false
       }));
     }
 
