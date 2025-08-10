@@ -83,11 +83,15 @@
        RESULTS SCREEN
   ========================== -->
   <section id="result" class="hidden w-full max-w-xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 text-center fade-in">
-    <h2 class="text-2xl font-semibold text-rose-700 mb-2">🥢 Miso is cooking up some ideas...</h2>
-    <p class="text-gray-600 text-base mb-4">(Hang tight — we’re finding your perfect bite.)</p>
+    <h2 class="text-2xl font-semibold text-rose-700 mb-2">
+  🥢 Your Miso Recommendations
+</h2>
+<p class="text-gray-600 text-base mb-4">
+  Here’s what we think will hit the spot.
+</p>
 
-    <!-- Injected quiz answers -->
-    <div id="results-display" class="text-left text-sm bg-white p-4 rounded-xl shadow-inner max-h-60 overflow-y-auto border border-gray-100"></div>
+    <!-- ✅ Clean results area for restaurant cards (no selected answers) -->
+    <div id="results-list" class="grid grid-cols-1 gap-4 text-left"></div>
 
     <!-- Restart Button -->
     <button id="restart-btn"

@@ -29,7 +29,7 @@ function updateQuestionProgress() {
   const bar = document.getElementById("question-progress");
   if (!bar) return;
 
-  const answered = currentQuestion;
+  const answered = currentQuestion; // shows progress after each answer
   const total = questions.length || 1;
   const percent = Math.min(100, Math.round((answered / total) * 100));
 
@@ -61,7 +61,9 @@ function showQuestion() {
   quizContainer.classList.remove("hidden");
 
   const progressIndicator = document.getElementById("progress-indicator");
-  progressIndicator.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
+  if (progressIndicator) {
+    progressIndicator.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
+  }
 
   const question = questions[currentQuestion];
   container.innerHTML = `<div class="card fade-in"><div class="question">${question.question}</div></div>`;
@@ -83,6 +85,7 @@ function showQuestion() {
 }
 
 function selectAnswer(answer) {
+  // Keep answers internally (for future scoring), but don't display them on the results UI
   answers.push({ question: questions[currentQuestion].question, answer });
   currentQuestion += 1;
   updateQuestionProgress();
@@ -172,12 +175,17 @@ function showResults() {
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
 
-    const display = document.getElementById("results-display");
-    if (display) {
-      display.innerHTML = answers
-        .map(a => `<p><strong>${a.question}</strong><br><span class="text-rose-600">→ ${a.answer}</span></p>`)
-        .join("<hr class='my-2' />");
-      display.scrollTop = 0;
+    // For now, show a gentle placeholder in results (no selected answers).
+    const list = document.getElementById("results-list");
+    if (list) {
+      list.innerHTML = `
+        <div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
+          <p class="text-gray-700 text-sm">
+            Your personalized suggestions will appear here. Next step: connect Yelp and render real restaurants. 🍽️
+          </p>
+        </div>
+      `;
+      list.scrollTop = 0;
     }
   }, 2800);
 }
