@@ -95,6 +95,53 @@ function selectAnswer(answer) {
 /* ==============================
    RESULTS + LOADING
 ============================== */
+// Persist filter state
+const STATE_KEY = "miso.filters.v1";
+function loadFilterState() {
+  try { return JSON.parse(sessionStorage.getItem(STATE_KEY)) || {}; } catch { return {}; }
+}
+function saveFilterState(s) {
+  try { sessionStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch {}
+}
+
+// Defaults
+let currentSort = loadFilterState().sort_by || "best_match";
+let openNow = typeof loadFilterState().open_now === "boolean" ? loadFilterState().open_now : true;
+let currentRadius = loadFilterState().radius || 8000;
+
+// Geolocation or manual location used for subsequent re-queries
+let lastCoords = null;
+let lastLocationStr = null;
+
+function applyFiltersUI() {
+  const best = document.getElementById("sort-best");
+  const rating = document.getElementById("sort-rating");
+  const distance = document.getElementById("sort-distance");
+  const open = document.getElementById("open-now");
+
+  if (best && rating && distance) {
+    [best, rating, distance].forEach(b => { b.setAttribute("aria-pressed", "false"); b.classList.remove("ring-2","ring-rose-400"); });
+    const active = currentSort === "rating" ? rating : currentSort === "distance" ? distance : best;
+    active.setAttribute("aria-pressed", "true");
+    active.classList.add("ring-2","ring-rose-400");
+  }
+  if (open) open.checked = !!openNow;
+}
+
+function attachControlsHandlers() {
+  const best = document.getElementById("sort-best");
+  const rating = document.getElementById("sort-rating");
+  const distance = document.getElementById("sort-distance");
+  const open = document.getElementById("open-now");
+  const widen = document.getElementById("btn-widen");
+
+  best?.addEventListener("click", () => { currentSort = "best_match"; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); applyFiltersUI(); });
+  rating?.addEventListener("click", () => { currentSort = "rating"; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); applyFiltersUI(); });
+  distance?.addEventListener("click", () => { currentSort = "distance"; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); applyFiltersUI(); });
+  open?.addEventListener("change", () => { openNow = open.checked; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); });
+  widen?.addEventListener("click", () => { currentRadius = Math.min(16000, (currentRadius || 8000) * 1.6); saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); });
+}
+
 function showResults() {
   const qBar = document.getElementById("question-progress");
   if (qBar) { qBar.style.transition = "width 300ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
@@ -131,68 +178,8 @@ function showResults() {
   updateLoadingMessage();
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
-  setTimeout(async () => {
-    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
-    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
-
-    loadingContainer.classList.add("hidden");
-    resultContainer.classList.remove("hidden");
-
-    await initYelpResults();
-  }, 2800);
-}
-
-/* ==============================
-   YELP INTEGRATION + CONTROLS
-============================== */
-let currentSort = "best_match";
-let openNow = true;
-let currentRadius = 8000;
-let lastGeo = null;        // { latitude, longitude } if used
-let lastLocation = null;   // string location if used
-let baseParams = null;
-
-function mapAnswersToParams() {
-  const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
-
-  const craving = find("Are you craving anything specific?");
-  const mood = find("What’s your current mood?");
-  let term = "restaurants";
-  if (craving === "Spicy") term = "spicy food";
-  else if (craving === "Sweet") term = "dessert";
-  else if (craving === "Hot and hearty") term = "comfort food";
-  else if (craving === "Fresh and light") term = "salad healthy";
-  if (mood.includes("healthy")) term = "healthy food";
-  if (mood.includes("Indulgent")) term = "dessert steak fried";
-  if (mood.includes("Adventurous")) term = "international food";
-
-  const priceAnswer = find("How much are you looking to spend?");
-  let price = undefined;
-  if (priceAnswer === "Under $10") price = "1";
-  else if (priceAnswer === "$10–$20") price = "1,2";
-  else if (priceAnswer === "$20–$40") price = "2,3";
-  else if (priceAnswer === "Money’s not a concern") price = "1,2,3,4";
-
-  const distance = find("How far are you willing to go?");
-  currentRadius = 8000;
-  if (distance === "Walking distance") currentRadius = 800;
-  else if (distance.includes("under 10")) currentRadius = 3000;
-  else if (distance.includes("15–30")) currentRadius = 8000;
-  else if (distance.includes("anywhere")) currentRadius = 16000;
-
-  const method = find("How would you like to eat today?");
-  let transactions = [];
-  if (method === "Delivery") transactions = ["delivery"];
-  else if (method === "Takeout") transactions = ["pickup"];
-
-  const diet = find("Any dietary goals or restrictions?");
-  if (diet.includes("Vegetarian")) term = "vegetarian";
-  else if (diet.includes("Vegan")) term = "vegan";
-  else if (diet.includes("Gluten-Free")) term = "gluten free";
-  else if (diet.includes("Low-Carb") || diet.includes("Keto")) term = "keto";
-  else if (diet.includes("High-Protein")) term = "protein bowls";
-
-  return { term, price, radius: currentRadius, transactions };
+  // Begin fetching during loading: try geolocation first
+  loadYelpResultsDuringLoading();
 }
 
 function showSkeletons() {
@@ -202,14 +189,37 @@ function showSkeletons() {
     const card = document.createElement("div");
     card.className = "p-4 rounded-xl border bg-white shadow-sm flex gap-4";
     card.innerHTML = `
-      <div class="w-28 h-20 rounded-lg skeleton"></div>
+      <div class="card-thumb skeleton"></div>
       <div class="flex-1 space-y-2">
         <div class="h-4 w-2/3 rounded skeleton"></div>
         <div class="h-3 w-1/2 rounded skeleton"></div>
         <div class="h-3 w-1/3 rounded skeleton"></div>
       </div>`;
-    document.getElementById("results-list").appendChild(card);
+    list.appendChild(card);
   }
+}
+
+function renderEmptyState() {
+  const list = document.getElementById("results-list");
+  list.innerHTML = `
+    <div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
+      <p class="text-gray-700 text-sm mb-3">No matching restaurants found.</p>
+      <div class="flex gap-2">
+        <button id="empty-widen" class="px-3 py-1.5 text-sm rounded-full border border-gray-300 bg-white">Widen radius</button>
+        <button id="empty-clear-price" class="px-3 py-1.5 text-sm rounded-full border border-gray-300 bg-white">Clear price filter</button>
+      </div>
+    </div>`;
+
+  document.getElementById("empty-widen")?.addEventListener("click", () => {
+    currentRadius = Math.min(16000, (currentRadius || 8000) * 1.6);
+    saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius });
+    refetch();
+  });
+  document.getElementById("empty-clear-price")?.addEventListener("click", () => {
+    // Remove price preference by removing the mapped answer; simpler: mark a flag to ignore price
+    ignorePriceFilter = true;
+    refetch();
+  });
 }
 
 function renderBusinesses(businesses = []) {
@@ -217,32 +227,41 @@ function renderBusinesses(businesses = []) {
   list.innerHTML = "";
 
   if (!businesses.length) {
-    list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm"><p class="text-gray-700 text-sm">No matching restaurants found. Try widening the distance or clearing price filters.</p></div>`;
+    renderEmptyState();
     return;
   }
 
   for (const b of businesses) {
     const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) : "";
-    const card = document.createElement("a");
-    card.href = b.url || "#";
-    card.target = "_blank";
-    card.rel = "noopener noreferrer";
+    const maps = b.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}` : "#";
+    const tel = (b.phone || "").replace(/[^\\d+]/g, "");
+    const telHref = tel ? `tel:${tel}` : null;
+
+    const card = document.createElement("div");
     card.className = "p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex gap-4";
     card.innerHTML = `
-      <img src="${b.image_url || ""}" alt="${b.name}" class="w-28 h-20 object-cover rounded-lg bg-gray-100" onerror="this.style.display='none'"/>
+      <a href="${b.url || "#"}" target="_blank" rel="noopener noreferrer">
+        <img loading="lazy" src="${b.image_url || ""}" alt="${b.name}" class="card-thumb" onerror="this.style.display='none'"/>
+      </a>
       <div class="flex-1">
         <div class="flex items-center justify-between">
-          <h3 class="text-lg font-semibold text-gray-900">${b.name}</h3>
+          <a href="${b.url || "#"}" target="_blank" rel="noopener noreferrer" class="text-lg font-semibold text-gray-900 hover:underline">${b.name}</a>
           ${b.price ? `<span class="text-sm text-gray-600">${b.price}</span>` : ""}
         </div>
         <div class="text-sm text-gray-700 mt-1">
           ${b.rating ? `⭐ ${b.rating} · ` : ""}${b.review_count ? `${b.review_count} reviews` : ""}
+          ${typeof b.is_closed === "boolean" ? ` · <span class="${b.is_closed ? 'text-red-600' : 'text-green-600'}">${b.is_closed ? 'Closed' : 'Open now'}</span>` : ""}
         </div>
         <div class="text-xs text-gray-600 mt-1">
-          ${Array.isArray(b.categories) ? b.categories.join(", ") : ""}
+          ${Array.isArray(b.categories) ? b.categories.slice(0,2).join(", ") : ""}
         </div>
         <div class="text-xs text-gray-500 mt-1">
           ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}
+        </div>
+        <div class="flex gap-2 mt-2">
+          ${telHref ? `<a href="${telHref}" class="px-3 py-1.5 text-xs rounded-full border border-gray-300 bg-white">Call</a>` : ""}
+          ${b.address ? `<a href="${maps}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-full border border-gray-300 bg-white">Directions</a>` : ""}
+          ${b.url ? `<a href="${b.url}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-full border border-gray-300 bg-white">Yelp</a>` : ""}
         </div>
       </div>
     `;
@@ -264,62 +283,88 @@ async function callYelp(params) {
   return data.businesses || [];
 }
 
-async function doSearch(overrides = {}) {
-  const params = {
-    ...baseParams,
-    sort_by: currentSort,
-    open_now: openNow,
-    radius: currentRadius,
-    limit: 20,
-    ...overrides
-  };
+// Map quiz answers to Yelp params; allow ignoring price via a flag (when user clears price)
+let ignorePriceFilter = false;
+function mapAnswersToParams() {
+  const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
 
-  if (lastGeo) {
-    params.latitude = lastGeo.latitude;
-    params.longitude = lastGeo.longitude;
-    delete params.location;
-  } else if (lastLocation) {
-    params.location = lastLocation;
-    delete params.latitude; delete params.longitude;
+  // Craving/mood -> term
+  const craving = find("Are you craving anything specific?");
+  const mood = find("What’s your current mood?");
+  let term = "restaurants";
+  if (craving === "Spicy") term = "spicy food";
+  else if (craving === "Sweet") term = "dessert";
+  else if (craving === "Hot and hearty") term = "comfort food";
+  else if (craving === "Fresh and light") term = "salad healthy";
+  if (mood.includes("healthy")) term = "healthy food";
+  if (mood.includes("Indulgent")) term = "dessert steak fried";
+  if (mood.includes("Adventurous")) term = "international food";
+
+  // Price
+  let price;
+  if (!ignorePriceFilter) {
+    const priceAnswer = find("How much are you looking to spend?");
+    if (priceAnswer === "Under $10") price = "1";
+    else if (priceAnswer === "$10–$20") price = "1,2";
+    else if (priceAnswer === "$20–$40") price = "2,3";
+    else if (priceAnswer === "Money’s not a concern") price = "1,2,3,4";
   }
 
+  // Transactions
+  const method = find("How would you like to eat today?");
+  let transactions = [];
+  if (method === "Delivery") transactions = ["delivery"];
+  else if (method === "Takeout") transactions = ["pickup"];
+
+  // Dietary -> nudge term
+  const diet = find("Any dietary goals or restrictions?");
+  if (diet.includes("Vegetarian")) term = "vegetarian";
+  else if (diet.includes("Vegan")) term = "vegan";
+  else if (diet.includes("Gluten-Free")) term = "gluten free";
+  else if (diet.includes("Low-Carb") || diet.includes("Keto")) term = "keto";
+  else if (diet.includes("High-Protein")) term = "protein bowls";
+
+  return { term, price, transactions };
+}
+
+function baseParams() {
+  const mapped = mapAnswersToParams();
+  return {
+    ...mapped,
+    open_now: openNow,
+    sort_by: currentSort,
+    radius: currentRadius,
+    limit: 20
+  };
+}
+
+async function refetch() {
   showSkeletons();
   try {
-    const results = await callYelp(params);
-    renderBusinesses(results);
+    let businesses;
+    const params = { ...baseParams() };
+
+    if (lastCoords) {
+      businesses = await callYelp({ ...params, ...lastCoords });
+    } else if (lastLocationStr) {
+      businesses = await callYelp({ ...params, location: lastLocationStr });
+    } else {
+      // Shouldn't happen, but fallback to manual UI
+      const locBox = document.getElementById("location-fallback");
+      locBox?.classList.remove("hidden");
+      renderEmptyState();
+      return;
+    }
+    renderBusinesses(businesses);
   } catch (e) {
     const list = document.getElementById("results-list");
-    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message}</div>`;
+    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message} <button id="retry" class="ml-2 px-2 py-1 text-xs rounded border">Retry</button></div>`;
+    document.getElementById("retry")?.addEventListener("click", () => refetch());
   }
 }
 
-async function initYelpResults() {
-  // Controls
-  const bestBtn = document.getElementById("sort-best");
-  const ratingBtn = document.getElementById("sort-rating");
-  const distanceBtn = document.getElementById("sort-distance");
-  const openChk = document.getElementById("open-now");
-  const widenBtn = document.getElementById("btn-widen");
-
-  const setActive = (btn) => {
-    [bestBtn, ratingBtn, distanceBtn].forEach(b => {
-      if (!b) return;
-      const isActive = b === btn;
-      b.classList.toggle("active", isActive);
-      b.setAttribute("aria-pressed", isActive ? "true" : "false");
-    });
-  };
-
-  bestBtn?.addEventListener("click", () => { currentSort = "best_match"; setActive(bestBtn); doSearch(); });
-  ratingBtn?.addEventListener("click", () => { currentSort = "rating"; setActive(ratingBtn); doSearch(); });
-  distanceBtn?.addEventListener("click", () => { currentSort = "distance"; setActive(distanceBtn); doSearch(); });
-  openChk?.addEventListener("change", () => { openNow = !!openChk.checked; doSearch(); });
-  widenBtn?.addEventListener("click", () => { currentRadius = Math.min(16000, Math.round(currentRadius * 1.5)); doSearch(); });
-
-  // Base params from answers
-  baseParams = mapAnswersToParams();
-
-  // Try geolocation first
+async function loadYelpResultsDuringLoading() {
+  // Try geolocation during loading
   const geo = await new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
@@ -329,28 +374,53 @@ async function initYelpResults() {
     );
   });
 
-  if (geo) {
-    lastGeo = geo;
-    await doSearch();
-    return;
+  const params = { ...baseParams() };
+  let businesses = [];
+
+  try {
+    if (geo) {
+      lastCoords = geo; lastLocationStr = null;
+      businesses = await callYelp({ ...params, ...geo });
+    } else {
+      // show manual input on loading
+      const locBox = document.getElementById("location-fallback");
+      const manualInput = document.getElementById("manual-location");
+      const useBtn = document.getElementById("use-location-btn");
+      locBox?.classList.remove("hidden");
+
+      await new Promise((resolve) => {
+        const handler = async () => {
+          const loc = (manualInput.value || "").trim();
+          if (!loc) return;
+          lastLocationStr = loc; lastCoords = null;
+          businesses = await callYelp({ ...params, location: loc });
+          resolve();
+        };
+        useBtn?.addEventListener("click", handler, { once: true });
+        manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { handler(); } }, { once: true });
+      });
+    }
+  } catch (e) {
+    // fall through to results with error
+  } finally {
+    // End loading state and show results
+    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
+    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
+
+    loadingContainer.classList.add("hidden");
+    resultContainer.classList.remove("hidden");
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // Hook up controls and apply UI state
+    attachControlsHandlers();
+    applyFiltersUI();
+
+    // Render results or empty state
+    if (businesses?.length) renderBusinesses(businesses);
+    else renderEmptyState();
   }
-
-  // Manual fallback
-  const locBox = document.getElementById("location-fallback");
-  const manualInput = document.getElementById("manual-location");
-  const useBtn = document.getElementById("use-location-btn");
-  locBox.classList.remove("hidden");
-
-  const triggerSearch = async () => {
-    const value = (manualInput.value || "").trim();
-    if (!value) return;
-    lastLocation = value;
-    lastGeo = null;
-    await doSearch();
-  };
-
-  useBtn?.addEventListener("click", triggerSearch);
-  manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
 }
 
 /* ==============================
@@ -362,6 +432,7 @@ if (restartBtn) {
     window.scrollTo({ top: 0, behavior: "smooth" });
     currentQuestion = 0;
     answers = [];
+    ignorePriceFilter = false;
 
     if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
     if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
@@ -378,14 +449,6 @@ if (restartBtn) {
     resultContainer.classList.add("hidden");
     loadingContainer.classList.add("hidden");
     quizContainer.classList.remove("hidden");
-
-    // Reset Yelp state
-    currentSort = "best_match";
-    openNow = true;
-    currentRadius = 8000;
-    lastGeo = null;
-    lastLocation = null;
-    baseParams = null;
 
     showQuestion();
     updateQuestionProgress();
