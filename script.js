@@ -192,7 +192,7 @@ function renderYelpResults(list, where) {
 
   display.innerHTML = list.map(b => {
     const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) + " mi" : "";
-    const cat = (b.categories || []).slice(0, 3).join(", ");
+    const cat = (b.categories || []).slice(0, 3).map(c => c.title).join(", ");
     const price = b.price ? ` • ${b.price}` : "";
     const statusBadge =
       b.open_status === "open" ? `<span class="text-green-700 bg-green-100 text-xs px-2 py-1 rounded-md">Open now</span>` :
@@ -208,17 +208,18 @@ function renderYelpResults(list, where) {
           <img src="${b.image_url || ''}" alt="" class="w-20 h-20 object-cover rounded-lg bg-gray-100" onerror="this.style.display='none'"/>
         </div>
         <div class="card-text flex-1 min-w-0 text-sm">
-          <div class="flex items-start justify-between gap-2">
-            <a href="${b.url}" target="_blank" rel="noopener" class="font-semibold text-rose-700 hover:underline leading-tight break-words">${b.name}</a>
-            <div class="card-actions flex flex-wrap items-center gap-2 flex-shrink-0 self-start">
-              ${statusBadge}
-              ${callBtn}
-            </div>
-          </div>
-          <div class="card-meta text-gray-600">${cat}${price}${miles ? ` • ${miles}` : ""}</div>
-          <div class="card-address text-gray-700">${b.address || ""}</div>
-          <div class="text-gray-700">${(b.rating ?? "–")}★ (${b.review_count ?? 0} reviews)</div>
-        </div>
+<div class="flex items-start justify-between gap-2">
+  <!-- Give the name flex-1 + min-w-0 so it gets real width -->
+  <a href="${b.url}" target="_blank" rel="noopener"
+     class="font-semibold text-rose-700 hover:underline leading-tight break-words flex-1 min-w-0">
+     ${b.name}
+  </a>
+  <!-- Keep actions from shrinking the name to 1-char width -->
+  <div class="card-actions flex flex-wrap items-center gap-2 flex-shrink-0 self-start">
+    ${statusBadge}
+    ${callBtn}
+  </div>
+</div>
       </article>`;
   }).join("");
 }
