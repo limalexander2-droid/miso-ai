@@ -10,6 +10,11 @@ const resultContainer = document.getElementById("result");
 const loadingContainer = document.getElementById("loading");
 const quizContainer = document.getElementById("quiz");
 
+/* Controls (persisted) */
+let currentSort = sessionStorage.getItem("miso_sort") || "best_match";
+let openNow = sessionStorage.getItem("miso_open_now") !== "false"; // default true
+let currentRadius = Number(sessionStorage.getItem("miso_radius") || 8000);
+
 const loadingMessages = [
   { emoji: "🍣", text: "Plating your cravings…" },
   { emoji: "🍜", text: "Asking the kitchen for something special…" },
@@ -39,16 +44,16 @@ function updateQuestionProgress() {
    QUIZ QUESTIONS
 ============================== */
 const questions = [
-  { question: "How hungry are you right now?", options: ["Just a little hungry", "Pretty hungry", "Starving", "Planning ahead"] },
-  { question: "How much time do you have to eat?", options: ["Less than 15 minutes", "About 30 minutes", "An hour or more", "No rush"] },
-  { question: "Who are you eating with?", options: ["Just me", "With a friend or partner", "Small group (3–4)", "Big group or family", "Doesn’t matter"] },
-  { question: "What’s your current mood?", options: ["Cozy / comfort food", "Energized / healthy", "Indulgent / treat yourself", "Adventurous", "Chill / no strong cravings"] },
-  { question: "Are you craving anything specific?", options: ["Spicy", "Sweet", "Hot and hearty", "Fresh and light", "No specific craving"] },
-  { question: "Any dietary goals or restrictions?", options: ["Weight loss / low-cal", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "No restrictions"] },
-  { question: "How much are you looking to spend?", options: ["Under $10", "$10–$20", "$20–$40", "Money’s not a concern"] },
-  { question: "How far are you willing to go?", options: ["Walking distance", "Short drive (under 10 mins)", "15–30 mins", "I'll go anywhere"] },
-  { question: "How would you like to eat today?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "Doesn’t matter"] },
-  { question: "Any special occasion or vibe?", options: ["Just a regular meal", "Quick lunch break", "Date night", "Post-workout", "Comfort after a long day", "Celebration"] }
+  { question: "How hungry are you right now?", options: ["😌 Just a little hungry", "🙂 Pretty hungry", "🤤 Starving", "🗓️ Planning ahead"] },
+  { question: "How much time do you have to eat?", options: ["⏱️ < 15 minutes", "🕧 ~30 minutes", "🕐 An hour or more", "🧘 No rush"] },
+  { question: "Who are you eating with?", options: ["👤 Just me", "👫 Friend or partner", "👨‍👩‍👧 Small group (3–4)", "👨‍👩‍👧‍👦 Big group / family", "🤷 Doesn’t matter"] },
+  { question: "What’s your current mood?", options: ["🧸 Cozy / comfort food", "💪 Energized / healthy", "🍰 Indulgent / treat yourself", "🧭 Adventurous", "😌 Chill / no strong cravings"] },
+  { question: "Are you craving anything specific?", options: ["🌶️ Spicy", "🍭 Sweet", "🍲 Hot and hearty", "🥗 Fresh and light", "🤷 No specific craving"] },
+  { question: "Any dietary goals or restrictions?", options: ["⚖️ Weight loss / low-cal", "🌱 Vegetarian / Vegan", "🌾 Gluten-Free", "🥩 Low-Carb / Keto", "🏋️ High-Protein", "🙌 No restrictions"] },
+  { question: "How much are you looking to spend?", options: ["$ Under $10", "$$ $10–$20", "$$$ $20–$40", "$$$$ Money’s not a concern"] },
+  { question: "How far are you willing to go?", options: ["🚶 Walking distance", "🚗 < 10 mins", "🚙 15–30 mins", "🛣️ I'll go anywhere"] },
+  { question: "How would you like to eat today?", options: ["🍽️ Dine-in", "🥡 Takeout", "🚚 Delivery", "🚗 Drive-thru", "🤷 Doesn’t matter"] },
+  { question: "Any special occasion or vibe?", options: ["📅 Regular meal", "⏳ Quick lunch break", "💖 Date night", "🏃 Post-workout", "🛋️ Comfort after a long day", "🎉 Celebration"] }
 ];
 
 /* ==============================
@@ -62,17 +67,15 @@ function showQuestion() {
   if (progressIndicator) progressIndicator.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
 
   const question = questions[currentQuestion];
-  container.innerHTML = `<div class="card fade-in"><div class="question">${question.question}</div></div>`;
+  container.innerHTML = `<div class="rounded-2xl p-4 sm:p-5 text-center bg-white/70 shadow-md border border-violet-100 fade-in">
+    <div class="text-xl sm:text-2xl font-semibold text-gray-900">${question.question}</div>
+  </div>`;
   answerButtons.innerHTML = "";
 
   question.options.forEach(option => {
     const button = document.createElement("button");
     button.innerText = option;
-    button.className = `
-      bg-white text-gray-700 text-sm sm:text-base px-4 py-2 sm:px-5 sm:py-3 rounded-xl shadow-sm border border-gray-200
-      hover:bg-rose-100 hover:text-rose-700 transition-all duration-200 ease-out
-      focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2
-    `;
+    button.className = "answer-btn text-sm sm:text-base px-4 py-3 sm:px-5 sm:py-3 rounded-xl";
     button.addEventListener("click", () => selectAnswer(option));
     answerButtons.appendChild(button);
   });
@@ -81,7 +84,9 @@ function showQuestion() {
 }
 
 function selectAnswer(answer) {
-  answers.push({ question: questions[currentQuestion].question, answer });
+  // Strip emoji from answer when storing
+  const clean = answer.replace(/^\\S+\\s/, "");
+  answers.push({ question: questions[currentQuestion].question, answer: clean });
   currentQuestion += 1;
   updateQuestionProgress();
 
@@ -95,53 +100,6 @@ function selectAnswer(answer) {
 /* ==============================
    RESULTS + LOADING
 ============================== */
-// Persist filter state
-const STATE_KEY = "miso.filters.v1";
-function loadFilterState() {
-  try { return JSON.parse(sessionStorage.getItem(STATE_KEY)) || {}; } catch { return {}; }
-}
-function saveFilterState(s) {
-  try { sessionStorage.setItem(STATE_KEY, JSON.stringify(s)); } catch {}
-}
-
-// Defaults
-let currentSort = loadFilterState().sort_by || "best_match";
-let openNow = typeof loadFilterState().open_now === "boolean" ? loadFilterState().open_now : true;
-let currentRadius = loadFilterState().radius || 8000;
-
-// Geolocation or manual location used for subsequent re-queries
-let lastCoords = null;
-let lastLocationStr = null;
-
-function applyFiltersUI() {
-  const best = document.getElementById("sort-best");
-  const rating = document.getElementById("sort-rating");
-  const distance = document.getElementById("sort-distance");
-  const open = document.getElementById("open-now");
-
-  if (best && rating && distance) {
-    [best, rating, distance].forEach(b => { b.setAttribute("aria-pressed", "false"); b.classList.remove("ring-2","ring-rose-400"); });
-    const active = currentSort === "rating" ? rating : currentSort === "distance" ? distance : best;
-    active.setAttribute("aria-pressed", "true");
-    active.classList.add("ring-2","ring-rose-400");
-  }
-  if (open) open.checked = !!openNow;
-}
-
-function attachControlsHandlers() {
-  const best = document.getElementById("sort-best");
-  const rating = document.getElementById("sort-rating");
-  const distance = document.getElementById("sort-distance");
-  const open = document.getElementById("open-now");
-  const widen = document.getElementById("btn-widen");
-
-  best?.addEventListener("click", () => { currentSort = "best_match"; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); applyFiltersUI(); });
-  rating?.addEventListener("click", () => { currentSort = "rating"; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); applyFiltersUI(); });
-  distance?.addEventListener("click", () => { currentSort = "distance"; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); applyFiltersUI(); });
-  open?.addEventListener("change", () => { openNow = open.checked; saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); });
-  widen?.addEventListener("click", () => { currentRadius = Math.min(16000, (currentRadius || 8000) * 1.6); saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius }); refetch(); });
-}
-
 function showResults() {
   const qBar = document.getElementById("question-progress");
   if (qBar) { qBar.style.transition = "width 300ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
@@ -154,9 +112,9 @@ function showResults() {
   const progressBar = document.getElementById("progress-bar");
   if (progressBar) {
     progressBar.style.transition = "none"; progressBar.style.width = "0%"; void progressBar.offsetWidth;
-    progressBar.style.transition = "width 2.8s ease-in-out"; progressBar.style.width = "100%";
+    progressBar.style.transition = "width 2.6s ease-in-out"; progressBar.style.width = "100%";
     const track = progressBar.parentElement; if (track) track.setAttribute("aria-valuenow", "0");
-    const start = performance.now(), duration = 2800;
+    const start = performance.now(), duration = 2600;
     if (window.loadingAriaInterval) clearInterval(window.loadingAriaInterval);
     window.loadingAriaInterval = setInterval(() => {
       const elapsed = performance.now() - start;
@@ -178,8 +136,75 @@ function showResults() {
   updateLoadingMessage();
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
-  // Begin fetching during loading: try geolocation first
-  loadYelpResultsDuringLoading();
+  setTimeout(async () => {
+    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
+    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
+
+    // Start Yelp load while still on loading screen (so location fallback can appear)
+    await loadYelpResults();
+
+    // Reveal results and auto-scroll top
+    loadingContainer.classList.add("hidden");
+    resultContainer.classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, 2600);
+}
+
+/* ==============================
+   SMART TERM EXPANSION + YELP
+============================== */
+function mapAnswersToParams() {
+  const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
+
+  // Smart term expansion from craving + mood
+  const craving = find("Are you craving anything specific?");
+  const mood = find("What’s your current mood?");
+
+  // Default terms
+  let terms = ["restaurants"];
+
+  // Expand based on craving
+  if (craving.includes("Spicy")) terms = ["spicy food", "thai", "sichuan", "indian"];
+  else if (craving.includes("Sweet")) terms = ["dessert", "ice cream", "frozen yogurt", "gelato", "bakery"];
+  else if (craving.includes("Hot and hearty")) terms = ["comfort food", "ramen", "bbq", "stew"];
+  else if (craving.includes("Fresh and light")) terms = ["salad", "poke", "mediterranean", "healthy food"];
+  else if (craving.includes("No specific craving")) terms = ["restaurants"];
+
+  // Nudge by mood
+  if (mood.includes("healthy")) terms = ["healthy food", "salad", "poke", "veggie"];
+  if (mood.includes("Indulgent")) terms = [...terms, "dessert", "steak"];
+  if (mood.includes("Adventurous")) terms = [...terms, "ethiopian", "korean", "filipino", "nepalese"];
+
+  // Price
+  const priceAnswer = find("How much are you looking to spend?");
+  let price = undefined;
+  if (priceAnswer.startsWith("$ Under")) price = "1";
+  else if (priceAnswer.startsWith("$$")) price = "1,2";
+  else if (priceAnswer.startsWith("$$$")) price = "2,3";
+  else if (priceAnswer.startsWith("$$$$")) price = "1,2,3,4";
+
+  // Radius
+  const distance = find("How far are you willing to go?");
+  let radius = currentRadius || 8000;
+  if (distance.includes("Walking")) radius = 800;
+  else if (distance.includes("< 10")) radius = 3000;
+  else if (distance.includes("15–30")) radius = 8000;
+  else if (distance.includes("anywhere")) radius = Math.max(radius, 16000);
+
+  // Transactions
+  const method = find("How would you like to eat today?");
+  let transactions = [];
+  if (method.includes("Delivery")) transactions = ["delivery"];
+  else if (method.includes("Takeout")) transactions = ["pickup"];
+
+  // Dietary -> nudge
+  const diet = find("Any dietary goals or restrictions?");
+  if (diet.includes("Vegetarian") || diet.includes("Vegan")) terms = ["vegetarian", "vegan", ...terms];
+  else if (diet.includes("Gluten-Free")) terms = ["gluten free", ...terms];
+  else if (diet.includes("Keto")) terms = ["keto", ...terms];
+  else if (diet.includes("High-Protein")) terms = ["protein bowls", ...terms];
+
+  return { terms: Array.from(new Set(terms)).slice(0, 6), price, radius, transactions };
 }
 
 function showSkeletons() {
@@ -189,7 +214,7 @@ function showSkeletons() {
     const card = document.createElement("div");
     card.className = "p-4 rounded-xl border bg-white shadow-sm flex gap-4";
     card.innerHTML = `
-      <div class="card-thumb skeleton"></div>
+      <div class="w-28 h-20 rounded-lg skeleton"></div>
       <div class="flex-1 space-y-2">
         <div class="h-4 w-2/3 rounded skeleton"></div>
         <div class="h-3 w-1/2 rounded skeleton"></div>
@@ -199,69 +224,48 @@ function showSkeletons() {
   }
 }
 
-function renderEmptyState() {
-  const list = document.getElementById("results-list");
-  list.innerHTML = `
-    <div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
-      <p class="text-gray-700 text-sm mb-3">No matching restaurants found.</p>
-      <div class="flex gap-2">
-        <button id="empty-widen" class="px-3 py-1.5 text-sm rounded-full border border-gray-300 bg-white">Widen radius</button>
-        <button id="empty-clear-price" class="px-3 py-1.5 text-sm rounded-full border border-gray-300 bg-white">Clear price filter</button>
-      </div>
-    </div>`;
-
-  document.getElementById("empty-widen")?.addEventListener("click", () => {
-    currentRadius = Math.min(16000, (currentRadius || 8000) * 1.6);
-    saveFilterState({ sort_by: currentSort, open_now: openNow, radius: currentRadius });
-    refetch();
-  });
-  document.getElementById("empty-clear-price")?.addEventListener("click", () => {
-    // Remove price preference by removing the mapped answer; simpler: mark a flag to ignore price
-    ignorePriceFilter = true;
-    refetch();
-  });
-}
-
 function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
 
   if (!businesses.length) {
-    renderEmptyState();
+    list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
+      <p class="text-gray-700 text-sm">No matching places found. Try <button id="inline-widen" class="underline text-rose-600">widening the radius</button> or <button id="inline-clear-price" class="underline text-rose-600">clearing price</button>.</p>
+    </div>`;
+    document.getElementById("inline-widen")?.addEventListener("click", () => { currentRadius = Math.min(16000, (currentRadius || 8000) * 2); persistControls(); reloadYelp(); });
+    document.getElementById("inline-clear-price")?.addEventListener("click", () => { sessionStorage.setItem("miso_price_override", ""); reloadYelp(); });
     return;
   }
 
   for (const b of businesses) {
     const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) : "";
-    const maps = b.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}` : "#";
-    const tel = (b.phone || "").replace(/[^\\d+]/g, "");
-    const telHref = tel ? `tel:${tel}` : null;
-
     const card = document.createElement("div");
-    card.className = "p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex gap-4";
+    card.className = "p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition";
+
     card.innerHTML = `
-      <a href="${b.url || "#"}" target="_blank" rel="noopener noreferrer">
-        <img loading="lazy" src="${b.image_url || ""}" alt="${b.name}" class="card-thumb" onerror="this.style.display='none'"/>
-      </a>
-      <div class="flex-1">
-        <div class="flex items-center justify-between">
-          <a href="${b.url || "#"}" target="_blank" rel="noopener noreferrer" class="text-lg font-semibold text-gray-900 hover:underline">${b.name}</a>
-          ${b.price ? `<span class="text-sm text-gray-600">${b.price}</span>` : ""}
-        </div>
-        <div class="text-sm text-gray-700 mt-1">
-          ${b.rating ? `⭐ ${b.rating} · ` : ""}${b.review_count ? `${b.review_count} reviews` : ""}
-          ${typeof b.is_closed === "boolean" ? ` · <span class="${b.is_closed ? 'text-red-600' : 'text-green-600'}">${b.is_closed ? 'Closed' : 'Open now'}</span>` : ""}
-        </div>
-        <div class="text-xs text-gray-600 mt-1">
-          ${Array.isArray(b.categories) ? b.categories.slice(0,2).join(", ") : ""}
-        </div>
-        <div class="text-xs text-gray-500 mt-1">
-          ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}
-        </div>
-        <div class="flex gap-2 mt-2">
-          ${telHref ? `<a href="${telHref}" class="px-3 py-1.5 text-xs rounded-full border border-gray-300 bg-white">Call</a>` : ""}
-          ${b.address ? `<a href="${maps}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-full border border-gray-300 bg-white">Directions</a>` : ""}
-          ${b.url ? `<a href="${b.url}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 text-xs rounded-full border border-gray-300 bg-white">Yelp</a>` : ""}
+      <div class="flex gap-4">
+        <a href="${b.url || "#"}" target="_blank" rel="noopener noreferrer">
+          <img loading="lazy" src="${b.image_url || ""}" alt="${b.name}" class="w-28 h-20 object-cover rounded-lg bg-gray-100" onerror="this.style.display='none'"/>
+        </a>
+        <div class="flex-1">
+          <div class="flex items-center justify-between gap-2">
+            <a href="${b.url || "#"}" target="_blank" rel="noopener noreferrer" class="text-lg font-semibold text-gray-900 hover:underline">${b.name}</a>
+            ${b.price ? `<span class="text-sm text-gray-700">${b.price}</span>` : ""}
+          </div>
+          <div class="text-sm text-gray-700 mt-1">
+            ${b.rating ? `⭐ ${b.rating} · ` : ""}${b.review_count ? `${b.review_count} reviews` : ""}
+          </div>
+          <div class="text-xs text-gray-600 mt-1">
+            ${Array.isArray(b.categories) ? b.categories.slice(0,2).join(", ") : ""}
+          </div>
+          <div class="text-xs text-gray-500 mt-1">
+            ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}
+          </div>
+          <div class="flex gap-2 mt-2">
+            ${b.phone ? `<a href="tel:${b.phone.replace(/[^\\d+]/g,'')}" class="px-3 py-1 text-xs rounded-full border">Call</a>` : ""}
+            ${b.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}" target="_blank" class="px-3 py-1 text-xs rounded-full border">Directions</a>` : ""}
+            ${b.url ? `<a href="${b.url}" target="_blank" class="px-3 py-1 text-xs rounded-full border">Yelp</a>` : ""}
+          </div>
         </div>
       </div>
     `;
@@ -283,144 +287,117 @@ async function callYelp(params) {
   return data.businesses || [];
 }
 
-// Map quiz answers to Yelp params; allow ignoring price via a flag (when user clears price)
-let ignorePriceFilter = false;
-function mapAnswersToParams() {
-  const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
-
-  // Craving/mood -> term
-  const craving = find("Are you craving anything specific?");
-  const mood = find("What’s your current mood?");
-  let term = "restaurants";
-  if (craving === "Spicy") term = "spicy food";
-  else if (craving === "Sweet") term = "dessert";
-  else if (craving === "Hot and hearty") term = "comfort food";
-  else if (craving === "Fresh and light") term = "salad healthy";
-  if (mood.includes("healthy")) term = "healthy food";
-  if (mood.includes("Indulgent")) term = "dessert steak fried";
-  if (mood.includes("Adventurous")) term = "international food";
-
-  // Price
-  let price;
-  if (!ignorePriceFilter) {
-    const priceAnswer = find("How much are you looking to spend?");
-    if (priceAnswer === "Under $10") price = "1";
-    else if (priceAnswer === "$10–$20") price = "1,2";
-    else if (priceAnswer === "$20–$40") price = "2,3";
-    else if (priceAnswer === "Money’s not a concern") price = "1,2,3,4";
+/* Merge results from multiple terms and de-duplicate by id */
+function mergeBusinesses(arrays) {
+  const map = new Map();
+  for (const list of arrays) {
+    for (const b of list) {
+      if (!map.has(b.id)) map.set(b.id, b);
+    }
   }
-
-  // Transactions
-  const method = find("How would you like to eat today?");
-  let transactions = [];
-  if (method === "Delivery") transactions = ["delivery"];
-  else if (method === "Takeout") transactions = ["pickup"];
-
-  // Dietary -> nudge term
-  const diet = find("Any dietary goals or restrictions?");
-  if (diet.includes("Vegetarian")) term = "vegetarian";
-  else if (diet.includes("Vegan")) term = "vegan";
-  else if (diet.includes("Gluten-Free")) term = "gluten free";
-  else if (diet.includes("Low-Carb") || diet.includes("Keto")) term = "keto";
-  else if (diet.includes("High-Protein")) term = "protein bowls";
-
-  return { term, price, transactions };
+  return Array.from(map.values());
 }
 
-function baseParams() {
-  const mapped = mapAnswersToParams();
-  return {
-    ...mapped,
+let lastSearchContext = null; // remember coords or manual location
+
+function persistControls() {
+  sessionStorage.setItem("miso_sort", currentSort);
+  sessionStorage.setItem("miso_open_now", String(openNow));
+  sessionStorage.setItem("miso_radius", String(currentRadius));
+}
+
+async function loadYelpResults() {
+  showSkeletons();
+
+  const base = mapAnswersToParams();
+  // Allow price override cleared by empty state button
+  const priceOverride = sessionStorage.getItem("miso_price_override");
+  const price = (priceOverride === "") ? undefined : base.price;
+
+  // Controls UI wiring
+  const sortBest = document.getElementById("sort-best");
+  const sortRating = document.getElementById("sort-rating");
+  const sortDistance = document.getElementById("sort-distance");
+  const openNowBox = document.getElementById("open-now");
+  const widenBtn = document.getElementById("btn-widen");
+
+  function setActive(btn) {
+    [sortBest, sortRating, sortDistance].forEach(b => {
+      if (!b) return;
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      b.className = "answer-btn text-sm sm:text-base px-4 py-3 sm:px-5 sm:py-3 rounded-xl";
+    });
+  }
+  if (currentSort === "best_match") setActive(sortBest);
+  if (currentSort === "rating") setActive(sortRating);
+  if (currentSort === "distance") setActive(sortDistance);
+
+  if (openNowBox) { openNowBox.checked = openNow; openNowBox.onchange = () => { openNow = openNowBox.checked; persistControls(); reloadYelp(); }; }
+  if (widenBtn) widenBtn.onclick = () => { currentRadius = Math.min(16000, (currentRadius || 8000) * 2); persistControls(); reloadYelp(); };
+  sortBest && (sortBest.onclick = () => { currentSort = "best_match"; persistControls(); reloadYelp(); setActive(sortBest); });
+  sortRating && (sortRating.onclick = () => { currentSort = "rating"; persistControls(); reloadYelp(); setActive(sortRating); });
+  sortDistance && (sortDistance.onclick = () => { currentSort = "distance"; persistControls(); reloadYelp(); setActive(sortDistance); });
+
+  // Try geolocation first (if we don't already have a context)
+  const locBox = document.getElementById("location-fallback");
+  const manualInput = document.getElementById("manual-location");
+  const useBtn = document.getElementById("use-location-btn");
+
+  if (!lastSearchContext) {
+    lastSearchContext = await new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    });
+  }
+
+  if (!lastSearchContext) {
+    // Show manual location box on loading screen
+    locBox?.classList.remove("hidden");
+    const triggerSearch = async () => {
+      const location = (manualInput.value || "").trim();
+      if (!location) return;
+      lastSearchContext = { location };
+      await reloadYelp(); // run the search now that we have a location
+    };
+    useBtn?.addEventListener("click", triggerSearch);
+    manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
+    return; // wait for user input
+  }
+
+  // We have a context (coords or location). Fetch across expanded terms in parallel.
+  const queries = base.terms.map(term => callYelp({
+    ...(lastSearchContext.latitude ? { latitude: lastSearchContext.latitude, longitude: lastSearchContext.longitude } : { location: lastSearchContext.location }),
+    term,
+    price,
+    radius: base.radius,
     open_now: openNow,
     sort_by: currentSort,
-    radius: currentRadius,
     limit: 20
-  };
-}
+  }));
 
-async function refetch() {
-  showSkeletons();
   try {
-    let businesses;
-    const params = { ...baseParams() };
+    const results = await Promise.allSettled(queries);
+    const lists = results.filter(r => r.status === "fulfilled").map(r => r.value);
+    const merged = mergeBusinesses(lists);
 
-    if (lastCoords) {
-      businesses = await callYelp({ ...params, ...lastCoords });
-    } else if (lastLocationStr) {
-      businesses = await callYelp({ ...params, location: lastLocationStr });
-    } else {
-      // Shouldn't happen, but fallback to manual UI
-      const locBox = document.getElementById("location-fallback");
-      locBox?.classList.remove("hidden");
-      renderEmptyState();
-      return;
-    }
-    renderBusinesses(businesses);
+    // Optional: light re-sort client-side to respect sort choice if needed
+    if (currentSort === "rating") merged.sort((a,b) => (b.rating||0) - (a.rating||0));
+    if (currentSort === "distance") merged.sort((a,b) => (a.distance||Infinity) - (b.distance||Infinity));
+
+    renderBusinesses(merged);
   } catch (e) {
     const list = document.getElementById("results-list");
-    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message} <button id="retry" class="ml-2 px-2 py-1 text-xs rounded border">Retry</button></div>`;
-    document.getElementById("retry")?.addEventListener("click", () => refetch());
+    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message}</div>`;
   }
 }
 
-async function loadYelpResultsDuringLoading() {
-  // Try geolocation during loading
-  const geo = await new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 6000 }
-    );
-  });
-
-  const params = { ...baseParams() };
-  let businesses = [];
-
-  try {
-    if (geo) {
-      lastCoords = geo; lastLocationStr = null;
-      businesses = await callYelp({ ...params, ...geo });
-    } else {
-      // show manual input on loading
-      const locBox = document.getElementById("location-fallback");
-      const manualInput = document.getElementById("manual-location");
-      const useBtn = document.getElementById("use-location-btn");
-      locBox?.classList.remove("hidden");
-
-      await new Promise((resolve) => {
-        const handler = async () => {
-          const loc = (manualInput.value || "").trim();
-          if (!loc) return;
-          lastLocationStr = loc; lastCoords = null;
-          businesses = await callYelp({ ...params, location: loc });
-          resolve();
-        };
-        useBtn?.addEventListener("click", handler, { once: true });
-        manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { handler(); } }, { once: true });
-      });
-    }
-  } catch (e) {
-    // fall through to results with error
-  } finally {
-    // End loading state and show results
-    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
-    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
-
-    loadingContainer.classList.add("hidden");
-    resultContainer.classList.remove("hidden");
-
-    // Scroll to top
-    window.scrollTo({ top: 0, behavior: "smooth" });
-
-    // Hook up controls and apply UI state
-    attachControlsHandlers();
-    applyFiltersUI();
-
-    // Render results or empty state
-    if (businesses?.length) renderBusinesses(businesses);
-    else renderEmptyState();
-  }
+async function reloadYelp() {
+  showSkeletons();
+  await loadYelpResults();
 }
 
 /* ==============================
@@ -432,7 +409,7 @@ if (restartBtn) {
     window.scrollTo({ top: 0, behavior: "smooth" });
     currentQuestion = 0;
     answers = [];
-    ignorePriceFilter = false;
+    // Keep filter state persistent
 
     if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
     if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
