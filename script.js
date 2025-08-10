@@ -132,14 +132,19 @@ function showResults() {
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
   setTimeout(async () => {
-    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
-    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
+  if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
+  if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
 
-    loadingContainer.classList.add("hidden");
-    resultContainer.classList.remove("hidden");
+  loadingContainer.classList.add("hidden");
+  resultContainer.classList.remove("hidden");
 
-    await initYelpResults();
-  }, 2800);
+  // ✅ Automatically scroll to the top of the page
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Start Yelp load
+  await loadYelpResults();
+}, 2800);
+
 }
 
 /* ==============================
