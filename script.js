@@ -1,7 +1,11 @@
-/* SETTINGS */
-const ENABLE_ANIM = false; // keep UX snappy
+/* ==============================
+   SETTINGS
+============================== */
+const ENABLE_ANIM = false; // keep taps snappy
 
-/* STATE + DOM */
+/* ==============================
+   STATE + DOM REFERENCES
+============================== */
 let currentQuestion = 0;
 let answers = [];
 
@@ -23,7 +27,9 @@ const loadingMessages = [
   { emoji: "👨‍🍳", text: "Consulting my inner foodie…" }
 ];
 
-/* PROGRESS */
+/* ==============================
+   QUESTION PROGRESS BAR
+============================== */
 function updateQuestionProgress() {
   const bar = document.getElementById("question-progress");
   if (!bar) return;
@@ -34,7 +40,9 @@ function updateQuestionProgress() {
   bar.parentElement?.setAttribute("aria-valuenow", String(percent));
 }
 
-/* QUESTIONS */
+/* ==============================
+   QUIZ QUESTIONS
+============================== */
 const questions = [
   { question: "How hungry are you right now?", options: ["Just a little hungry", "Pretty hungry", "Starving", "Planning ahead"] },
   { question: "How much time do you have to eat?", options: ["Less than 15 minutes", "About 30 minutes", "An hour or more", "No rush"] },
@@ -48,9 +56,11 @@ const questions = [
   { question: "Any special occasion or vibe?", options: ["Just a regular meal", "Quick lunch break", "Date night", "Post-workout", "Comfort after a long day", "Celebration"] }
 ];
 
-/* ANIM (no-op if disabled) */
+/* ==============================
+   MICRO-ANIMATIONS + TRANSITIONS
+============================== */
 function attachButtonEffects(parentEl = document) {
-  if (!ENABLE_ANIM) return;
+  if (!ENABLE_ANIM) return; // no-op for speed
   parentEl.querySelectorAll('button').forEach(btn => {
     btn.classList.add('tap-anim','ripple');
     btn.addEventListener('click', e => {
@@ -62,13 +72,14 @@ function attachButtonEffects(parentEl = document) {
     });
   });
 }
+
 async function transitionQuestion(renderFn) {
   if (!ENABLE_ANIM) { renderFn(); return; }
   const q = document.getElementById('question-container');
   const head = document.getElementById('question-header');
   [q, head].forEach(node => node?.classList.remove('slide-in'));
   [q, head].forEach(node => node?.classList.add('slide-out'));
-  await new Promise(r => setTimeout(r, 160));
+  await new Promise(r => setTimeout(r, 160)); // slightly faster
   renderFn();
   [q, head].forEach(node => node?.classList.remove('slide-out'));
   [q, head].forEach(node => node?.classList.add('slide-in'));
@@ -93,7 +104,9 @@ function setQuestionEmoji(text) {
   if (title) title.textContent = text;
 }
 
-/* QUIZ FLOW */
+/* ==============================
+   QUIZ FLOW
+============================== */
 function showQuestion() {
   resultContainer.classList.add("hidden");
   quizContainer.classList.remove("hidden");
@@ -114,6 +127,7 @@ function showQuestion() {
         hover:bg-gray-100 hover:text-slate-900 transition-all duration-150 ease-out
         focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2
       `;
+      // pointerup fires faster than click on mobile; once prevents double-activation
       button.addEventListener("pointerup", () => selectAnswer(option), { once: true });
       answerButtons.appendChild(button);
     });
@@ -136,7 +150,9 @@ function selectAnswer(answer) {
   }
 }
 
-/* RESULTS + LOADING */
+/* ==============================
+   RESULTS + LOADING
+============================== */
 function showResults() {
   const qBar = document.getElementById("question-progress");
   if (qBar) { qBar.style.transition = "width 200ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
@@ -166,86 +182,149 @@ function showResults() {
 
   setTimeout(async () => {
     if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
-
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
-
     await initYelpResults();
   }, 2200);
 }
 
-/* TERM EXPANSION */
+/* ==============================
+   SMART TERM EXPANSION (keywords + Yelp categories)
+============================== */
 function expandedSearchTerms(rawTerms) {
-  const bank = {
-    sweet: ['dessert','ice cream','frozen yogurt','gelato','bakery','boba'],
-    spicy: ['thai','sichuan','mexican','indian','hot chicken'],
-    noodles: ['ramen','pho','udon','noodle'],
-    healthy: ['salad','poke','mediterranean','grill','healthy'],
-    breakfast: ['brunch','breakfast','coffee','bakery'],
-    bbq: ['bbq','barbecue','smokehouse','brisket'],
-    burgers: ['burger','smashburger'],
-    pizza: ['pizza','slice'],
-    tacos: ['taco','taqueria'],
-    seafood: ['seafood','oyster','sushi','poke'],
-    comfort: ['comfort food','chicken and waffles','meatloaf','mac and cheese'],
+  const TERM_BANK = {
+    sweet: {
+      keywords: ['dessert','ice cream','frozen yogurt','gelato','bakery','boba','milk tea'],
+      categories: ['desserts','icecream','frozenyogurt','gelato','bakeries','bubbletea']
+    },
+    spicy: {
+      keywords: ['spicy','sichuan','thai','indian','hot chicken'],
+      categories: ['szechuan','thai','indpak']
+    },
+    noodles: {
+      keywords: ['ramen','pho','udon','noodles'],
+      categories: ['ramen','vietnamese','noodles']
+    },
+    healthy: {
+      keywords: ['healthy','salad','poke','mediterranean','grill'],
+      categories: ['salad','poke','mediterranean','healthmarkets']
+    },
+    breakfast: {
+      keywords: ['breakfast','brunch','coffee','bakery'],
+      categories: ['breakfast_brunch','cafes','coffee','bakeries']
+    },
+    bbq: {
+      keywords: ['bbq','barbecue','smokehouse','brisket'],
+      categories: ['bbq']
+    },
+    burgers: {
+      keywords: ['burger','smashburger'],
+      categories: ['burgers','tradamerican']
+    },
+    pizza: {
+      keywords: ['pizza','slice'],
+      categories: ['pizza']
+    },
+    tacos: {
+      keywords: ['taco','taqueria'],
+      categories: ['tacos','mexican']
+    },
+    seafood: {
+      keywords: ['seafood','oyster','sushi','poke'],
+      categories: ['seafood','sushi','poke']
+    },
+    comfort: {
+      keywords: ['comfort food','chicken and waffles','meatloaf','mac and cheese'],
+      categories: ['comfortfood','southern']
+    },
+    international: {
+      keywords: ['international','global'],
+      categories: ['thai','indpak','mexican','chinese','japanese','korean','mediterranean','italian','vietnamese']
+    },
+    vegetarian: { keywords: ['vegetarian'], categories: ['vegetarian'] },
+    vegan: { keywords: ['vegan'], categories: ['vegan'] },
+    'gluten free': { keywords: ['gluten free'], categories: ['gluten_free'] },
+    keto: { keywords: ['keto'], categories: [] },
+    protein: { keywords: ['protein bowls','grill'], categories: [] },
   };
-  const out = new Set();
+
+  const kws = new Set();
+  const cats = new Set();
   rawTerms.forEach(t => {
-    const key = String(t).toLowerCase();
-    out.add(key);
-    Object.entries(bank).forEach(([k, list]) => {
-      if (key.includes(k)) list.forEach(x => out.add(x));
+    const key = String(t).toLowerCase().trim();
+    if (key) kws.add(key); // keep raw token
+    Object.entries(TERM_BANK).forEach(([k, val]) => {
+      if (key.includes(k)) {
+        val.keywords.forEach(x => kws.add(x));
+        val.categories.forEach(x => cats.add(x));
+      }
     });
   });
-  return [...out];
+
+  return {
+    keywords: [...kws].slice(0, 8),
+    categories: [...cats].slice(0, 8),
+  };
 }
 
-/* MAP ANSWERS -> YELP PARAMS */
+/* ==============================
+   MAP ANSWERS -> keywords + categories
+============================== */
 function mapAnswersToParams() {
   const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
 
   const craving = find("Are you craving anything specific?");
   const mood = find("What’s your current mood?");
-  let baseTerm = "restaurants";
-  if (craving === "Spicy") baseTerm = "spicy";
-  else if (craving === "Sweet") baseTerm = "sweet";
-  else if (craving === "Hot and hearty") baseTerm = "comfort";
-  else if (craving === "Fresh and light") baseTerm = "healthy";
-  if (mood.includes("healthy")) baseTerm = "healthy";
-  if (mood.includes("Indulgent")) baseTerm = "dessert steak fried";
-  if (mood.includes("Adventurous")) baseTerm = "international";
-
-  const priceAnswer = find("How much are you looking to spend?");
-  let price = undefined;
-  if (priceAnswer === "Under $10") price = "1";
-  else if (priceAnswer === "$10–$20") price = "1,2";
-  else if (priceAnswer === "$20–$40") price = "2,3";
-  else if (priceAnswer === "Money’s not a concern") price = "1,2,3,4";
-
+  const diet = find("Any dietary goals or restrictions?");
+  const budget = find("How much are you looking to spend?");
   const distance = find("How far are you willing to go?");
+  const method = find("How would you like to eat today?");
+
+  // topic tokens from answers
+  let baseTokens = [];
+  if (craving === "Spicy") baseTokens.push("spicy");
+  else if (craving === "Sweet") baseTokens.push("sweet");
+  else if (craving === "Hot and hearty") baseTokens.push("comfort");
+  else if (craving === "Fresh and light") baseTokens.push("healthy");
+  else baseTokens.push("restaurants"); // safe default
+
+  if (/healthy/i.test(mood)) baseTokens.push("healthy");
+  if (/Adventurous/i.test(mood)) baseTokens.push("international");
+  if (/Indulgent/i.test(mood)) baseTokens.push("sweet");
+
+  if (/Vegetarian/.test(diet)) baseTokens.push("vegetarian");
+  if (/Vegan/.test(diet)) baseTokens.push("vegan");
+  if (/Gluten-Free/.test(diet)) baseTokens.push("gluten free");
+  if (/Low-Carb|Keto/.test(diet)) baseTokens.push("keto");
+  if (/High-Protein/.test(diet)) baseTokens.push("protein");
+
+  // price
+  let price = undefined;
+  if (budget === "Under $10") price = "1";
+  else if (budget === "$10–$20") price = "1,2";
+  else if (budget === "$20–$40") price = "2,3";
+  else if (budget === "Money’s not a concern") price = "1,2,3,4";
+
+  // radius
   let radius = 8000;
   if (distance === "Walking distance") radius = 800;
   else if (distance.includes("under 10")) radius = 3000;
   else if (distance.includes("15–30")) radius = 8000;
   else if (distance.includes("anywhere")) radius = 16000;
 
-  const method = find("How would you like to eat today?");
+  // transactions
   let transactions = [];
   if (method === "Delivery") transactions = ["delivery"];
   else if (method === "Takeout") transactions = ["pickup"];
 
-  const diet = find("Any dietary goals or restrictions?");
-  if (diet.includes("Vegetarian")) baseTerm = "vegetarian";
-  else if (diet.includes("Vegan")) baseTerm = "vegan";
-  else if (diet.includes("Gluten-Free")) baseTerm = "gluten free";
-  else if (diet.includes("Low-Carb") || diet.includes("Keto")) baseTerm = "keto";
-  else if (diet.includes("High-Protein")) baseTerm = "protein bowls";
+  const { keywords, categories } = expandedSearchTerms(baseTokens);
 
-  const terms = expandedSearchTerms(baseTerm.split(/\s+/).filter(Boolean));
-  return { terms, price, radius, transactions };
+  return { keywords, categories, price, radius, transactions };
 }
 
-/* RESULTS RENDERING */
+/* ==============================
+   RESULTS RENDERING
+============================== */
 function hoursOrCallLine(b) {
   if (b.has_hours) {
     if (b.open_status === "open") return "⏰ Open now";
@@ -255,11 +334,13 @@ function hoursOrCallLine(b) {
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
+
 function toggleWidenFab(show) {
   const fab = document.getElementById("try-radius-fab");
   if (!fab) return;
   fab.classList.toggle("hidden", !show);
 }
+
 function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
@@ -269,6 +350,7 @@ function renderBusinesses(businesses = []) {
     list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm"><p class="text-gray-700 text-sm">No matching restaurants found. Try widening the distance or clearing price filters.</p></div>`;
     return;
   }
+
   toggleWidenFab(false);
 
   businesses.forEach((b, i) => {
@@ -305,9 +387,11 @@ function renderBusinesses(businesses = []) {
   });
 }
 
-/* YELP + CONTROLS */
+/* ==============================
+   YELP INTEGRATION + CONTROLS
+============================== */
 let currentSort = "best_match";
-let openNow = true;
+let openNow = false;         // default off for better hit rate; user can toggle on
 let currentRadius = 8000;
 let lastGeo = null;
 let lastLocation = null;
@@ -320,12 +404,14 @@ function readFilters() {
   filterState.nearby = !!document.getElementById("filter-nearby")?.checked;
   return filterState;
 }
+
 function applyClientFilters(items) {
   let list = [...items];
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
   return list;
 }
+
 async function callYelp(params) {
   const resp = await fetch('/.netlify/functions/yelp-search', {
     method: 'POST',
@@ -339,35 +425,104 @@ async function callYelp(params) {
   const data = await resp.json();
   return data.businesses || [];
 }
+
+/* ===== Multi-query helpers: build small valid queries and merge results ===== */
+function uniqById(items) {
+  const map = new Map();
+  items.forEach(b => { if (b && b.id && !map.has(b.id)) map.set(b.id, b); });
+  return [...map.values()];
+}
+
+// Build a few valid query variants (term OR categories per request)
+function buildQuerySet(baseParams) {
+  const qs = [];
+  const kw = (baseParams.keywords || []).slice(0, 6);
+  const cat = (baseParams.categories || []).slice(0, 5);
+
+  // 1) primary combined keyword term
+  if (kw.length) qs.push({ term: kw.slice(0, 3).join(" ") });
+
+  // 2) single-strong keywords
+  kw.slice(0, 4).forEach(w => qs.push({ term: w }));
+
+  // 3) categories (comma-separated)
+  if (cat.length) qs.push({ categories: cat.join(",") });
+
+  // 4) generic fallback
+  qs.push({ term: "restaurants" });
+
+  // de-dup
+  const seen = new Set();
+  return qs.filter(q => {
+    const k = q.term ? `t:${q.term}` : `c:${q.categories}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+async function mergedSearch(base, querySet, targetCount = 20) {
+  let all = [];
+  for (const q of querySet) {
+    const results = await callYelp({ ...base, ...q });
+    if (results?.length) {
+      all = uniqById(all.concat(results));
+      if (all.length >= targetCount) break;
+    }
+  }
+  // If still empty, relax once (open_now off + wider radius + broader terms)
+  if (!all.length) {
+    const relaxed = { ...base, open_now: false, radius: Math.min(32000, (base.radius || 8000) * 2) };
+    const relaxedSet = [...querySet, { term: "food" }, { term: "dinner" }, { term: "lunch" }, { term: "dessert" }, { term: "ice cream" }];
+    for (const q of relaxedSet) {
+      const results = await callYelp({ ...relaxed, ...q });
+      if (results?.length) {
+        all = uniqById(all.concat(results));
+        if (all.length >= targetCount) break;
+      }
+    }
+  }
+  return all;
+}
+
+/* Main search that uses the multi-query strategy */
 async function doSearch(overrides = {}) {
   readFilters();
-  const params = {
-    ...baseParams,
+
+  const base = {
     sort_by: filterState.nearby ? "distance" : currentSort,
     open_now: openNow,
     radius: currentRadius,
     limit: 20,
+    price: baseParams?.price,
+    transactions: baseParams?.transactions,
     ...overrides
   };
+
   if (lastGeo) {
-    params.latitude = lastGeo.latitude;
-    params.longitude = lastGeo.longitude;
-    delete params.location;
+    base.latitude = lastGeo.latitude;
+    base.longitude = lastGeo.longitude;
+    delete base.location;
   } else if (lastLocation) {
-    params.location = lastLocation;
-    delete params.latitude; delete params.longitude;
+    base.location = lastLocation;
+    delete base.latitude; delete base.longitude;
   }
+
+  const querySet = buildQuerySet(baseParams || { keywords: ['restaurants'], categories: [] });
+
   showSkeletons();
   try {
-    const results = await callYelp(params);
+    const results = await mergedSearch(base, querySet, 20);
     const filtered = applyClientFilters(results);
     renderBusinesses(filtered);
+    toggleWidenFab(!filtered.length);
   } catch (e) {
     const list = document.getElementById("results-list");
     list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message}</div>`;
     toggleWidenFab(true);
   }
 }
+
 function showSkeletons() {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
@@ -384,7 +539,12 @@ function showSkeletons() {
     list.appendChild(card);
   }
 }
+
+/* ==============================
+   INIT RESULTS (controls + location + first fetch)
+============================== */
 async function initYelpResults() {
+  // Controls
   const bestBtn = document.getElementById("sort-best");
   const ratingBtn = document.getElementById("sort-rating");
   const distanceBtn = document.getElementById("sort-distance");
@@ -408,14 +568,16 @@ async function initYelpResults() {
   ratingBtn?.addEventListener("click", () => { currentSort = "rating"; setActive(ratingBtn); doSearch(); });
   distanceBtn?.addEventListener("click", () => { currentSort = "distance"; setActive(distanceBtn); doSearch(); });
   openChk?.addEventListener("change", () => { openNow = !!openChk.checked; doSearch(); });
-  widenBtn?.addEventListener("click", () => { currentRadius = Math.min(16000, Math.round(currentRadius * 1.5)); doSearch(); });
-  widenFab?.addEventListener("click", () => { currentRadius = Math.min(16000, Math.round(currentRadius * 1.5)); doSearch(); });
+  widenBtn?.addEventListener("click", () => { currentRadius = Math.min(32000, Math.round(currentRadius * 1.5)); doSearch(); });
+  widenFab?.addEventListener("click", () => { currentRadius = Math.min(32000, Math.round(currentRadius * 1.5)); doSearch(); });
   hiChk?.addEventListener("change", () => doSearch());
   budChk?.addEventListener("change", () => doSearch());
   nearChk?.addEventListener("change", () => doSearch());
 
+  // Base params from answers
   baseParams = mapAnswersToParams();
 
+  // Try geolocation first
   const geo = await new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
@@ -431,6 +593,7 @@ async function initYelpResults() {
     return;
   }
 
+  // Manual fallback UI
   const locBox = document.getElementById("location-fallback");
   locBox?.classList.remove("hidden");
 
@@ -449,7 +612,9 @@ async function initYelpResults() {
   manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
 }
 
-/* RESTART */
+/* ==============================
+   RESTART
+============================== */
 const restartBtn = document.getElementById("restart-btn");
 if (restartBtn) {
   restartBtn.addEventListener("click", () => {
@@ -470,8 +635,9 @@ if (restartBtn) {
     loadingContainer.classList.add("hidden");
     quizContainer.classList.remove("hidden");
 
+    // Reset Yelp state
     currentSort = "best_match";
-    openNow = true;
+    openNow = false;
     currentRadius = 8000;
     lastGeo = null;
     lastLocation = null;
@@ -486,7 +652,9 @@ if (restartBtn) {
   });
 }
 
-/* INIT */
+/* ==============================
+   INIT
+============================== */
 showQuestion();
 updateQuestionProgress();
 attachButtonEffects();
