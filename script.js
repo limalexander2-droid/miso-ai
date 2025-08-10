@@ -131,7 +131,7 @@ function showResults() {
   updateLoadingMessage();
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
-  setTimeout(async () => {
+setTimeout(async () => {
   if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
   if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
 
