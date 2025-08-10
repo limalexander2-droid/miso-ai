@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <title>Miso AI - What Should I Eat?</title>
 
   <!-- Tailwind CSS via CDN -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
-  <!-- Add smooth transitions -->
+  <!-- Add smooth transitions and micro-interactions -->
   <style>
     .fade-in { animation: fadeIn 0.6s ease-out both; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
@@ -20,15 +20,71 @@
 
     .chip { border: 1px solid rgba(0,0,0,0.08); background: white; padding: 0.4rem 0.75rem; border-radius: 9999px; font-size: 0.85rem; }
     .chip.active { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
+
+    /* Background (light, high-contrast) */
+    body {
+      background: linear-gradient(135deg, #fff7ed 0%, #ffe4e6 100%); /* warm light gradient */
+    }
+
+    /* Subtle tap animation */
+    .tap-anim { transition: transform 120ms ease; }
+    .tap-anim:active { transform: scale(0.97); }
+
+    /* Ripple (no extra libs) */
+    .ripple { position: relative; overflow: hidden; }
+    .ripple::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at var(--ripple-x) var(--ripple-y), rgba(0,0,0,.12) 0, rgba(0,0,0,0) 60%);
+      opacity: 0;
+      transform: scale(0);
+      transition: transform 350ms ease, opacity 500ms ease;
+      pointer-events: none;
+    }
+    .ripple.rippling::after {
+      opacity: 1;
+      transform: scale(3.5);
+    }
+
+    /* Question transitions */
+    .slide-in { animation: slideIn 260ms ease both; }
+    .slide-out { animation: slideOut 220ms ease both; }
+    @keyframes slideIn { from {opacity:0; transform: translateY(8px);} to {opacity:1; transform: translateY(0);} }
+    @keyframes slideOut { from {opacity:1; transform: translateY(0);} to {opacity:0; transform: translateY(-6px);} }
+
+    /* Top pick badge */
+    .top-pick-badge {
+      position: absolute; top: 10px; left: 10px;
+      background: linear-gradient(135deg, #f59e0b, #f97316);
+      color: #111827; font-weight: 700; font-size: 12px;
+      padding: 6px 10px; border-radius: 9999px; box-shadow: 0 4px 12px rgba(0,0,0,.25);
+    }
+
+    /* Card polish */
+    .card {
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 10px 30px rgba(0,0,0,.10);
+    }
+
+    /* Success toast */
+    .toast {
+      position: fixed; z-index: 50; left: 50%; top: 18px; transform: translateX(-50%) translateY(-8px);
+      background: #10b981; color: white; padding: 10px 14px; border-radius: 9999px;
+      font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; pointer-events: none;
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   </style>
 </head>
-<body class="bg-gradient-to-br from-amber-50 to-rose-100 min-h-screen flex items-center justify-center px-4 py-8 font-sans">
+<body class="min-h-screen flex items-center justify-center px-4 py-8 font-sans">
 
   <!-- =========================
        QUIZ SCREEN
   ========================== -->
-  <main id="quiz" class="w-full max-w-xl bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 md:space-y-6 fade-in">
-    <h1 class="text-2xl sm:text-3xl font-semibold text-center text-rose-600 mb-2">🍜 Miso AI</h1>
+  <main id="quiz" class="w-full max-w-xl bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 md:space-y-6 fade-in">
+    <h1 class="text-2xl sm:text-3xl font-semibold text-center text-rose-700 mb-2">🍜 Miso AI</h1>
     <p class="text-center text-gray-700 text-base italic">"Tell me how you feel — I’ll tell you what to eat."</p>
 
     <div id="progress-indicator" class="text-sm text-center text-gray-600 transition-opacity duration-300 ease-in-out">
@@ -39,8 +95,14 @@
       <div id="question-progress" class="h-3 miso-bar transition-all duration-300 ease-out" style="width:0%"></div>
     </div>
 
-    <div id="question-container" class="text-xl font-medium text-gray-800 text-center mt-6"></div>
-    <div id="answer-buttons" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4"></div>
+    <!-- Question header with emoji hint -->
+    <div id="question-header" class="mt-4 text-center text-xl sm:text-2xl font-semibold text-gray-900">
+      <span id="question-emoji" aria-hidden="true" class="mr-2">🍽️</span>
+      <span id="question-title"></span>
+    </div>
+
+    <div id="question-container" class="mt-2"></div>
+    <div id="answer-buttons" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"></div>
   </main>
 
   <!-- =========================
@@ -61,6 +123,8 @@
 
       <div class="w-full bg-gray-200 h-3 rounded-full overflow-hidden mt-6" role="progressbar" aria-label="Loading results" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div id="progress-bar" class="h-3 miso-bar transition-all ease-in-out" style="width:0%"></div>
+      </div>
+
       <!-- Manual location while loading -->
       <div id="loading-location" class="hidden mt-6 p-3 rounded-xl border border-amber-200 bg-amber-50 text-left">
         <p class="text-sm text-gray-700 mb-2">Share your location for the best matches, or enter a city/ZIP:</p>
@@ -69,7 +133,6 @@
           <button id="loading-use-location-btn" class="px-4 py-2 rounded-lg text-white" style="background-color: var(--miso-accent);">Search</button>
         </div>
         <p class="text-xs text-gray-500 mt-1">Tip: Allow location access when prompted.</p>
-      </div>
       </div>
     </div>
   </section>
@@ -93,6 +156,18 @@
           <input type="checkbox" id="open-now" class="h-4 w-4" checked />
           <span>Open now</span>
         </label>
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" id="filter-highrated" class="h-4 w-4" />
+          <span>High Rated Only</span>
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" id="filter-budget" class="h-4 w-4" />
+          <span>Budget-friendly</span>
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" id="filter-nearby" class="h-4 w-4" />
+          <span>Close to Me</span>
+        </label>
         <button id="btn-widen" class="chip">Try wider radius</button>
       </div>
     </div>
@@ -113,6 +188,9 @@
     <!-- Restart -->
     <button id="restart-btn" class="mt-6 text-white font-semibold py-2 px-6 rounded-xl shadow transition duration-200" style="background-color: var(--miso-accent);">Restart Quiz ↻</button>
   </section>
+
+  <!-- Success toast -->
+  <div id="success-toast" class="toast">✅ Your perfect bites are ready!</div>
 
   <audio id="miso-sound" src="miso-load.mp3" preload="auto"></audio>
   <script src="script.js"></script>
