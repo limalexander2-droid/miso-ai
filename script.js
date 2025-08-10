@@ -206,6 +206,72 @@ function getGeolocation(timeoutMs = 3000) {
   });
 }
 
+
+// --- Filtering state (client-side triggers a fresh fetch) ---
+let lastGeo = null;
+let lastBaseParams = null;
+let lastLocationLabel = null;
+
+function collectActivePriceFilters() {
+  const buttons = Array.from(document.querySelectorAll('.filter-price.active'));
+  const vals = buttons.map(b => b.getAttribute('data-price'));
+  return vals.length ? vals.join(',') : undefined;
+}
+
+function applyFilterButtonStyles() {
+  document.querySelectorAll('.filter-price').forEach(btn => {
+    if (btn.classList.contains('active')) {
+      btn.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
+    } else {
+      btn.classList.remove('bg-rose-50', 'text-rose-700', 'border-rose-200');
+    }
+  });
+}
+
+// Fetch using last base params + current filter UI
+async function refetchWithFilters() {
+  if (!lastBaseParams) return;
+
+  const openNow = document.getElementById('filter-open')?.checked || false;
+  const sortBy = document.getElementById('filter-sort')?.value || 'best_match';
+  const radiusSel = parseInt(document.getElementById('filter-radius')?.value || '8000', 10);
+  const priceSel = collectActivePriceFilters();
+
+  const body = {
+    ...lastBaseParams,
+    open_now: openNow,
+    sort_by: sortBy,
+    radius: radiusSel,
+  };
+  if (priceSel) body.price = priceSel;
+
+  if (lastGeo) {
+    body.latitude = lastGeo.latitude;
+    body.longitude = lastGeo.longitude;
+  } else {
+    body.location = lastBaseParams.location || 'San Angelo, TX';
+  }
+
+  const display = document.getElementById("results-display");
+  if (display) {
+    display.innerHTML = '<div class="text-gray-600">Updating results…</div>';
+  }
+
+  try {
+    const res = await fetch("/.netlify/functions/yelp-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    renderYelpResults(data.businesses || [], lastLocationLabel);
+  } catch (e) {
+    if (display) {
+      display.innerHTML = '<div class="text-red-700">Error refreshing results.</div>';
+    }
+  }
+}
+
 // Render Yelp results into the results-display
 function renderYelpResults(list, where) {
   const display = document.getElementById("results-display");
@@ -230,7 +296,9 @@ function renderYelpResults(list, where) {
         ? `<span class="text-green-700 bg-green-100 text-xs px-2 py-1 rounded-md">Open now</span>`
         : (b.open_status === "closed"
             ? `<span class="text-red-700 bg-red-100 text-xs px-2 py-1 rounded-md">Closed</span>`
-            : `<span class="text-gray-700 bg-gray-100 text-xs px-2 py-1 rounded-md">Hours not listed</span>`);
+            : (b.has_hours
+                ? `<span class="text-blue-700 bg-blue-100 text-xs px-2 py-1 rounded-md">Hours available</span>`
+                : `<span class="text-gray-700 bg-gray-100 text-xs px-2 py-1 rounded-md">Hours not listed</span>`));
 
     const callBtn = b.phone
       ? `<a href="tel:${b.phone.replace(/[^+\d]/g,'')}" class="inline-block text-sm px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50">Call</a>`
@@ -322,6 +390,7 @@ async function showResults() {
 
   // --- NEW: Build Yelp params from answers
   const yelpParams = buildYelpParams(answers);
+  lastBaseParams = { ...yelpParams };
 
   // --- NEW: Try geolocation, but don't block for more than ~1s beyond bar
   let geo = null;
@@ -358,6 +427,33 @@ async function showResults() {
     }
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
+
+    // Show filters toolbar
+    const filterBar = document.getElementById("filters");
+    if (filterBar) filterBar.classList.remove("hidden");
+
+    // Save last geo/location label for future refetches
+    lastGeo = geo;
+    lastLocationLabel = geo ? "your location" : "San Angelo, TX";
+
+    // Wire up filter controls once
+    const priceButtons = document.querySelectorAll(".filter-price");
+    priceButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        btn.classList.toggle("active");
+        applyFilterButtonStyles();
+        refetchWithFilters();
+      });
+    });
+    document.getElementById("filter-price-clear")?.addEventListener("click", () => {
+      document.querySelectorAll(".filter-price.active").forEach(b => b.classList.remove("active"));
+      applyFilterButtonStyles();
+      refetchWithFilters();
+    });
+    document.getElementById("filter-open")?.addEventListener("change", refetchWithFilters);
+    document.getElementById("filter-sort")?.addEventListener("change", refetchWithFilters);
+    document.getElementById("filter-radius")?.addEventListener("change", refetchWithFilters);
+
 
     const display = document.getElementById("results-display");
     if (!display) return;
