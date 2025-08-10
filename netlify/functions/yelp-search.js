@@ -1,128 +1,126 @@
 // netlify/functions/yelp-search.js
-const YELP_API = "https://api.yelp.com/v3/businesses/search";
+const API = "https://api.yelp.com/v3";
+const SEARCH = `${API}/businesses/search`;
+
+const corsHeaders = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
 
 export const handler = async (event) => {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization"
-  };
-
   if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers, body: "" };
+    return { statusCode: 204, headers: corsHeaders, body: "" };
   }
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+    return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
 
   try {
+    if (!process.env.YELP_API_KEY) {
+      return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "Missing YELP_API_KEY in environment" }) };
+    }
+
     const body = JSON.parse(event.body || "{}");
     let {
       latitude,
       longitude,
       location,
       term = "restaurants",
+      terms = [],
       price,
       radius = 8000,
-      open_now = true,
+      open_now = false,
       sort_by = "best_match",
-      transactions = []
+      limit = 20,
+      filters = {}
     } = body;
 
-    if (!process.env.YELP_API_KEY) {
-      return { statusCode: 500, headers, body: JSON.stringify({ error: "Missing YELP_API_KEY in environment" }) };
+    // Build term from array if provided
+    const finalTerm = (Array.isArray(terms) && terms.length) ? terms.join(", ") : term;
+
+    const params = new URLSearchParams();
+    if (latitude && longitude) {
+      params.set("latitude", String(latitude));
+      params.set("longitude", String(longitude));
+    } else {
+      const safeLocation = (location && String(location).trim()) || "San Antonio, TX";
+      params.set("location", safeLocation);
+    }
+    if (finalTerm) params.set("term", finalTerm);
+    if (radius) params.set("radius", String(radius));
+    params.set("limit", String(limit));
+
+    // server-side sort tweak for "nearby"
+    const nearby = !!filters.nearby;
+    params.set("sort_by", nearby ? "distance" : sort_by);
+
+    if (price) params.set("price", price);
+    if (open_now === true || filters.openNow === true) params.set("open_now", "true");
+
+    const sRes = await fetch(`${SEARCH}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${process.env.YELP_API_KEY}` },
+    });
+    if (!sRes.ok) {
+      const txt = await sRes.text().catch(() => "");
+      return { statusCode: sRes.status, headers: corsHeaders, body: JSON.stringify({ error: txt || "Yelp search failed" }) };
+    }
+    const sData = await sRes.json();
+    const base = Array.isArray(sData.businesses) ? sData.businesses : [];
+    if (!base.length) {
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ businesses: [] }) };
     }
 
-    // Always ensure we have *some* usable location
-    const safeLocation =
-      (location && String(location).trim()) ||
-      (latitude && longitude ? null : "San Antonio, TX"); // change default if you want
+    const ids = base.map(b => b.id).slice(0, 30);
+    const details = await Promise.all(ids.map(id =>
+      fetch(`${API}/businesses/${id}`, { headers: { Authorization: `Bearer ${process.env.YELP_API_KEY}` } })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+    ));
+    const dMap = new Map(details.filter(Boolean).map(d => [d.id, d]));
 
-    const buildParams = (overrides = {}) => {
-      const p = new URLSearchParams();
+    const normalized = base.map(b => {
+      const d = dMap.get(b.id);
+      const hasHours = !!(d && Array.isArray(d.hours) && d.hours[0]);
+      const isOpenNow = hasHours ? d.hours[0].is_open_now === true : null;
 
-      // location handling
-      if (latitude && longitude) {
-        p.set("latitude", String(latitude));
-        p.set("longitude", String(longitude));
-      } else {
-        p.set("location", overrides.location ?? safeLocation);
-      }
+      let open_status = "unknown";
+      if (isOpenNow === true) open_status = "open";
+      else if (isOpenNow === false) open_status = "closed";
 
-      // core search fields
-      p.set("term", overrides.term ?? term);
-      p.set("radius", String(overrides.radius ?? radius));
-      p.set("limit", String(overrides.limit ?? 20));
-      p.set("sort_by", overrides.sort_by ?? sort_by);
+      const address =
+        d?.location?.display_address?.join(", ")
+        ?? b.location?.display_address?.join(", ")
+        ?? "";
+      const phone =
+        d?.display_phone
+        ?? b.display_phone
+        ?? b.phone
+        ?? "";
 
-      // optional filters
-      const usePrice = overrides.hasOwnProperty("price") ? overrides.price : price;
-      if (usePrice) p.set("price", usePrice);
+      return {
+        id: b.id,
+        name: b.name,
+        url: b.url,
+        image_url: b.image_url,
+        rating: b.rating,
+        review_count: b.review_count,
+        price: b.price,
+        categories: (b.categories || []).map(c => c.title),
+        distance: b.distance,
+        phone,
+        address,
+        coords: b.coordinates,
+        open_status,
+        has_hours: hasHours,
+      };
+    });
 
-      const useOpen = overrides.hasOwnProperty("open_now") ? overrides.open_now : open_now;
-      if (typeof useOpen === "boolean") p.set("open_now", String(useOpen));
+    const businesses = (open_now || filters.openNow) ? normalized.filter(n => n.open_status === "open") : normalized;
 
-      const useTx = overrides.hasOwnProperty("includeTransactions") ? overrides.includeTransactions : true;
-      if (useTx && transactions?.length) p.set("transactions", transactions.join(","));
-
-      return p.toString();
-    };
-
-    const doFetch = async (qs) => {
-      const res = await fetch(`${YELP_API}?${qs}`, {
-        headers: { Authorization: `Bearer ${process.env.YELP_API_KEY}` }
-      });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Yelp error ${res.status}: ${txt || res.statusText}`);
-      }
-      return res.json();
-    };
-
-    // First try: user's exact filters
-    let data = await doFetch(buildParams());
-
-    // Fallback 1: widen radius, DROP price/open_now/transactions
-    if (!data?.businesses?.length) {
-      data = await doFetch(buildParams({
-        radius: Math.min(16000, (radius || 8000) * 2),
-        price: undefined,
-        open_now: undefined,
-        includeTransactions: false,
-        sort_by // keep same sort preference
-      }));
-    }
-
-    // Fallback 2: very broad term + wide radius, no hard filters
-    if (!data?.businesses?.length) {
-      data = await doFetch(buildParams({
-        term: "restaurants",
-        radius: Math.min(16000, (radius || 8000) * 2),
-        price: undefined,
-        open_now: undefined,
-        includeTransactions: false
-      }));
-    }
-
-    const businesses = (data.businesses || []).map(b => ({
-      id: b.id,
-      name: b.name,
-      url: b.url,
-      image_url: b.image_url,
-      rating: b.rating,
-      review_count: b.review_count,
-      price: b.price,
-      categories: (b.categories || []).map(c => c.title),
-      distance: b.distance,
-      is_closed: b.is_closed,
-      phone: b.display_phone,
-      address: b.location?.display_address?.join(", "),
-      coords: b.coordinates
-    }));
-
-    return { statusCode: 200, headers, body: JSON.stringify({ businesses }) };
-
+    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ businesses }) };
   } catch (err) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
   }
 };
