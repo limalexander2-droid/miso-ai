@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <title>Miso AI - What Should I Eat?</title>
 
-  <!-- Tailwind CSS via CDN -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
-  <!-- Add smooth transitions and micro-interactions -->
   <style>
     .fade-in { animation: fadeIn 0.6s ease-out both; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
@@ -21,39 +19,15 @@
     .chip { border: 1px solid rgba(0,0,0,0.08); background: white; padding: 0.4rem 0.75rem; border-radius: 9999px; font-size: 0.85rem; }
     .chip.active { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
 
-    /* Background (light, high-contrast) */
-    body {
-      background: linear-gradient(135deg, #fff7ed 0%, #ffe4e6 100%); /* warm light gradient */
-    }
+    /* Upscale neutral background */
+    body { background: linear-gradient(180deg, #f7f4ef 0%, #eceae7 100%); }
 
-    /* Subtle tap animation */
-    .tap-anim { transition: transform 120ms ease; }
-    .tap-anim:active { transform: scale(0.97); }
-
-    /* Ripple (no extra libs) */
-    .ripple { position: relative; overflow: hidden; }
-    .ripple::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at var(--ripple-x) var(--ripple-y), rgba(0,0,0,.12) 0, rgba(0,0,0,0) 60%);
-      opacity: 0;
-      transform: scale(0);
-      transition: transform 350ms ease, opacity 500ms ease;
-      pointer-events: none;
-    }
-    .ripple.rippling::after {
-      opacity: 1;
-      transform: scale(3.5);
-    }
-
-    /* Question transitions */
+    /* Slide classes kept (no-op if animations disabled in JS) */
     .slide-in { animation: slideIn 260ms ease both; }
     .slide-out { animation: slideOut 220ms ease both; }
     @keyframes slideIn { from {opacity:0; transform: translateY(8px);} to {opacity:1; transform: translateY(0);} }
     @keyframes slideOut { from {opacity:1; transform: translateY(0);} to {opacity:0; transform: translateY(-6px);} }
 
-    /* Top pick badge */
     .top-pick-badge {
       position: absolute; top: 10px; left: 10px;
       background: linear-gradient(135deg, #f59e0b, #f97316);
@@ -61,41 +35,39 @@
       padding: 6px 10px; border-radius: 9999px; box-shadow: 0 4px 12px rgba(0,0,0,.25);
     }
 
-    /* Card polish */
-    .card {
-      border-radius: 16px;
-      background: #ffffff;
-      box-shadow: 0 10px 30px rgba(0,0,0,.10);
-    }
+    .card { border-radius: 16px; background: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,.10); }
 
-    /* Success toast */
-    .toast {
-      position: fixed; z-index: 50; left: 50%; top: 18px; transform: translateX(-50%) translateY(-8px);
-      background: #10b981; color: white; padding: 10px 14px; border-radius: 9999px;
-      font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; pointer-events: none;
-      transition: opacity 200ms ease, transform 200ms ease;
+    /* Floating “Try wider radius” button */
+    .try-radius-btn {
+      position: fixed;
+      right: max(12px, env(safe-area-inset-right));
+      top: 50%;
+      transform: translateY(-50%);
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 9999px;
+      padding: 10px 12px;
+      font-size: 0.85rem;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+      white-space: nowrap;
+      z-index: 40;
     }
-    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    @media (max-width: 375px) { .try-radius-btn { font-size: 0.78rem; padding: 8px 10px; } }
   </style>
 </head>
-<body class="min-h-screen flex items-center justify-center px-4 py-8 font-sans">
+<body class="min-h-screen flex items-center justify-center px-4 py-8 font-sans overflow-x-hidden">
 
-  <!-- =========================
-       QUIZ SCREEN
-  ========================== -->
+  <!-- QUIZ -->
   <main id="quiz" class="w-full max-w-xl bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 md:space-y-6 fade-in">
-    <h1 class="text-2xl sm:text-3xl font-semibold text-center text-rose-700 mb-2">🍜 Miso AI</h1>
+    <h1 class="text-2xl sm:text-3xl font-semibold text-center text-slate-800 mb-2">🍜 Miso AI</h1>
     <p class="text-center text-gray-700 text-base italic">"Tell me how you feel — I’ll tell you what to eat."</p>
 
-    <div id="progress-indicator" class="text-sm text-center text-gray-600 transition-opacity duration-300 ease-in-out">
-      Question 1 of 10
-    </div>
+    <div id="progress-indicator" class="text-sm text-center text-gray-600">Question 1 of 10</div>
 
     <div class="w-full bg-gray-200 h-3 rounded-full overflow-hidden mt-2" role="progressbar" aria-label="Quiz progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div id="question-progress" class="h-3 miso-bar transition-all duration-300 ease-out" style="width:0%"></div>
     </div>
 
-    <!-- Question header with emoji hint -->
     <div id="question-header" class="mt-4 text-center text-xl sm:text-2xl font-semibold text-gray-900">
       <span id="question-emoji" aria-hidden="true" class="mr-2">🍽️</span>
       <span id="question-title"></span>
@@ -105,21 +77,17 @@
     <div id="answer-buttons" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"></div>
   </main>
 
-  <!-- =========================
-       LOADING SCREEN
-  ========================== -->
+  <!-- LOADING -->
   <section id="loading" class="hidden w-full max-w-xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 text-center fade-in">
     <div class="flex flex-col items-center space-y-4">
-      <svg class="animate-spin h-10 w-10 text-rose-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <svg class="animate-spin h-10 w-10" style="color: var(--miso-accent)" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
       </svg>
 
-      <h2 class="text-xl font-semibold text-rose-700">Miso is thinking...</h2>
-      <span id="loading-emoji" class="text-5xl animate-bounce">🍣</span>
-      <p class="text-gray-600 text-sm" aria-live="polite">
-        Finding restaurants that match your cravings, mood, and vibe...
-      </p>
+      <h2 class="text-xl font-semibold text-slate-800">Miso is thinking...</h2>
+      <span id="loading-emoji" class="text-5xl">🍣</span>
+      <p class="text-gray-600 text-sm" aria-live="polite">Finding restaurants that match your cravings, mood, and vibe...</p>
 
       <div class="w-full bg-gray-200 h-3 rounded-full overflow-hidden mt-6" role="progressbar" aria-label="Loading results" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div id="progress-bar" class="h-3 miso-bar transition-all ease-in-out" style="width:0%"></div>
@@ -137,21 +105,18 @@
     </div>
   </section>
 
-  <!-- =========================
-       RESULTS SCREEN
-  ========================== -->
+  <!-- RESULTS -->
   <section id="result" class="hidden w-full max-w-3xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-6 sm:p-8 text-center fade-in">
-    <h2 class="text-2xl font-semibold text-rose-700 mb-2">🥢 Your Miso Recommendations</h2>
+    <h2 class="text-2xl font-semibold text-slate-800 mb-2">🥢 Your Miso Recommendations</h2>
     <p class="text-gray-600 text-base mb-4">Here’s what we think will hit the spot.</p>
 
-    <!-- Controls -->
     <div id="results-controls" class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gray-50 border border-gray-200 text-left">
       <div class="flex items-center gap-2">
         <button id="sort-best" class="chip active" aria-pressed="true">Best match</button>
         <button id="sort-rating" class="chip" aria-pressed="false">Rating</button>
         <button id="sort-distance" class="chip" aria-pressed="false">Distance</button>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex flex-wrap items-center gap-3">
         <label class="inline-flex items-center gap-2 text-sm">
           <input type="checkbox" id="open-now" class="h-4 w-4" checked />
           <span>Open now</span>
@@ -172,7 +137,6 @@
       </div>
     </div>
 
-    <!-- Manual location fallback -->
     <div id="location-fallback" class="hidden mt-4 mb-2 p-3 rounded-xl border border-amber-200 bg-amber-50 text-left">
       <label for="manual-location" class="block text-sm font-medium text-gray-700 mb-1">Location (city or ZIP)</label>
       <div class="flex gap-2">
@@ -182,15 +146,13 @@
       <p class="text-xs text-gray-500 mt-1">Tip: Allow location access for better results.</p>
     </div>
 
-    <!-- Results list -->
     <div id="results-list" class="grid grid-cols-1 gap-4 text-left mt-4"></div>
 
-    <!-- Restart -->
     <button id="restart-btn" class="mt-6 text-white font-semibold py-2 px-6 rounded-xl shadow transition duration-200" style="background-color: var(--miso-accent);">Restart Quiz ↻</button>
   </section>
 
-  <!-- Success toast -->
-  <div id="success-toast" class="toast">✅ Your perfect bites are ready!</div>
+  <!-- Floating helper (hidden until needed) -->
+  <button id="try-radius-fab" class="try-radius-btn hidden">Try wider radius</button>
 
   <audio id="miso-sound" src="miso-load.mp3" preload="auto"></audio>
   <script src="script.js"></script>

@@ -1,6 +1,7 @@
-/* ==============================
-   STATE + DOM REFERENCES
-============================== */
+/* SETTINGS */
+const ENABLE_ANIM = false; // keep UX snappy
+
+/* STATE + DOM */
 let currentQuestion = 0;
 let answers = [];
 
@@ -22,9 +23,7 @@ const loadingMessages = [
   { emoji: "👨‍🍳", text: "Consulting my inner foodie…" }
 ];
 
-/* ==============================
-   QUESTION PROGRESS BAR
-============================== */
+/* PROGRESS */
 function updateQuestionProgress() {
   const bar = document.getElementById("question-progress");
   if (!bar) return;
@@ -35,9 +34,7 @@ function updateQuestionProgress() {
   bar.parentElement?.setAttribute("aria-valuenow", String(percent));
 }
 
-/* ==============================
-   QUIZ QUESTIONS
-============================== */
+/* QUESTIONS */
 const questions = [
   { question: "How hungry are you right now?", options: ["Just a little hungry", "Pretty hungry", "Starving", "Planning ahead"] },
   { question: "How much time do you have to eat?", options: ["Less than 15 minutes", "About 30 minutes", "An hour or more", "No rush"] },
@@ -51,10 +48,9 @@ const questions = [
   { question: "Any special occasion or vibe?", options: ["Just a regular meal", "Quick lunch break", "Date night", "Post-workout", "Comfort after a long day", "Celebration"] }
 ];
 
-/* ==============================
-   MICRO-ANIMATIONS + TRANSITIONS
-============================== */
+/* ANIM (no-op if disabled) */
 function attachButtonEffects(parentEl = document) {
+  if (!ENABLE_ANIM) return;
   parentEl.querySelectorAll('button').forEach(btn => {
     btn.classList.add('tap-anim','ripple');
     btn.addEventListener('click', e => {
@@ -62,17 +58,17 @@ function attachButtonEffects(parentEl = document) {
       btn.style.setProperty('--ripple-x', (e.clientX - rect.left) + 'px');
       btn.style.setProperty('--ripple-y', (e.clientY - rect.top) + 'px');
       btn.classList.add('rippling');
-      setTimeout(() => btn.classList.remove('rippling'), 350);
+      setTimeout(() => btn.classList.remove('rippling'), 250);
     });
   });
 }
-
 async function transitionQuestion(renderFn) {
+  if (!ENABLE_ANIM) { renderFn(); return; }
   const q = document.getElementById('question-container');
   const head = document.getElementById('question-header');
   [q, head].forEach(node => node?.classList.remove('slide-in'));
   [q, head].forEach(node => node?.classList.add('slide-out'));
-  await new Promise(r => setTimeout(r, 220));
+  await new Promise(r => setTimeout(r, 160));
   renderFn();
   [q, head].forEach(node => node?.classList.remove('slide-out'));
   [q, head].forEach(node => node?.classList.add('slide-in'));
@@ -97,9 +93,7 @@ function setQuestionEmoji(text) {
   if (title) title.textContent = text;
 }
 
-/* ==============================
-   QUIZ FLOW
-============================== */
+/* QUIZ FLOW */
 function showQuestion() {
   resultContainer.classList.add("hidden");
   quizContainer.classList.remove("hidden");
@@ -117,18 +111,16 @@ function showQuestion() {
       button.innerText = option;
       button.className = `
         bg-white text-gray-700 text-base px-5 py-4 rounded-2xl shadow-sm border border-gray-200
-        hover:bg-rose-100 hover:text-rose-700 transition-all duration-200 ease-out
-        focus:outline-none focus:ring-2 focus:ring-rose-400 focus:ring-offset-2
+        hover:bg-gray-100 hover:text-slate-900 transition-all duration-150 ease-out
+        focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2
       `;
-      button.addEventListener("click", () => selectAnswer(option));
+      button.addEventListener("pointerup", () => selectAnswer(option), { once: true });
       answerButtons.appendChild(button);
     });
     attachButtonEffects(answerButtons);
   };
 
-  // first render with slide
   transitionQuestion(render);
-
   updateQuestionProgress();
 }
 
@@ -144,22 +136,10 @@ function selectAnswer(answer) {
   }
 }
 
-/* ==============================
-   SUCCESS TOAST
-============================== */
-function showSuccessToast() {
-  const t = document.getElementById('success-toast');
-  if (!t) return;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 1800);
-}
-
-/* ==============================
-   RESULTS + LOADING
-============================== */
+/* RESULTS + LOADING */
 function showResults() {
   const qBar = document.getElementById("question-progress");
-  if (qBar) { qBar.style.transition = "width 300ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
+  if (qBar) { qBar.style.transition = "width 200ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
 
   quizContainer.classList.add("hidden");
   const sound = document.getElementById("miso-sound");
@@ -169,16 +149,7 @@ function showResults() {
   const progressBar = document.getElementById("progress-bar");
   if (progressBar) {
     progressBar.style.transition = "none"; progressBar.style.width = "0%"; void progressBar.offsetWidth;
-    progressBar.style.transition = "width 2.8s ease-in-out"; progressBar.style.width = "100%";
-    const track = progressBar.parentElement; if (track) track.setAttribute("aria-valuenow", "0");
-    const start = performance.now(), duration = 2800;
-    if (window.loadingAriaInterval) clearInterval(window.loadingAriaInterval);
-    window.loadingAriaInterval = setInterval(() => {
-      const elapsed = performance.now() - start;
-      const pct = Math.min(100, Math.round((elapsed / duration) * 100));
-      track?.setAttribute("aria-valuenow", String(pct));
-      if (pct >= 100) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
-    }, 100);
+    progressBar.style.transition = "width 2.2s ease-in-out"; progressBar.style.width = "100%";
   }
 
   const loadingText = loadingContainer.querySelector("p");
@@ -186,28 +157,24 @@ function showResults() {
   let messageIndex = 0;
   function updateLoadingMessage() {
     const { emoji, text } = loadingMessages[messageIndex];
-      if (loadingText) loadingText.textContent = text;
-      if (loadingEmoji) loadingEmoji.textContent = emoji;
-      messageIndex = (messageIndex + 1) % loadingMessages.length;
+    if (loadingText) loadingText.textContent = text;
+    if (loadingEmoji) loadingEmoji.textContent = emoji;
+    messageIndex = (messageIndex + 1) % loadingMessages.length;
   }
   updateLoadingMessage();
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
   setTimeout(async () => {
     if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
-    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
 
     loadingContainer.classList.add("hidden");
-    showSuccessToast();
     resultContainer.classList.remove("hidden");
 
     await initYelpResults();
-  }, 2800);
+  }, 2200);
 }
 
-/* ==============================
-   TERM EXPANSION
-============================== */
+/* TERM EXPANSION */
 function expandedSearchTerms(rawTerms) {
   const bank = {
     sweet: ['dessert','ice cream','frozen yogurt','gelato','bakery','boba'],
@@ -233,9 +200,7 @@ function expandedSearchTerms(rawTerms) {
   return [...out];
 }
 
-/* ==============================
-   MAP ANSWERS -> YELP PARAMS
-============================== */
+/* MAP ANSWERS -> YELP PARAMS */
 function mapAnswersToParams() {
   const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
 
@@ -277,15 +242,11 @@ function mapAnswersToParams() {
   else if (diet.includes("High-Protein")) baseTerm = "protein bowls";
 
   const terms = expandedSearchTerms(baseTerm.split(/\s+/).filter(Boolean));
-
   return { terms, price, radius, transactions };
 }
 
-/* ==============================
-   RESULTS RENDERING
-============================== */
+/* RESULTS RENDERING */
 function hoursOrCallLine(b) {
-  // server provides open_status: 'open'|'closed'|'unknown', has_hours: boolean, phone
   if (b.has_hours) {
     if (b.open_status === "open") return "⏰ Open now";
     if (b.open_status === "closed") return "⏰ Closed now";
@@ -294,15 +255,21 @@ function hoursOrCallLine(b) {
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
-
+function toggleWidenFab(show) {
+  const fab = document.getElementById("try-radius-fab");
+  if (!fab) return;
+  fab.classList.toggle("hidden", !show);
+}
 function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
 
   if (!businesses.length) {
+    toggleWidenFab(true);
     list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm"><p class="text-gray-700 text-sm">No matching restaurants found. Try widening the distance or clearing price filters.</p></div>`;
     return;
   }
+  toggleWidenFab(false);
 
   businesses.forEach((b, i) => {
     const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) : "";
@@ -329,25 +296,21 @@ function renderBusinesses(businesses = []) {
           📍 ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}
         </div>
         <div class="text-xs text-gray-700 mt-1">
-          ${hoursOrCallLine(b)} ${b.phone ? `• <a href="tel:${b.phone.replace(/[^\\d+]/g,'')}" class="underline">Call</a>` : ""}
+          ${hoursOrCallLine(b)} ${b.phone ? `• <a href="tel:${b.phone.replace(/[^\d+]/g,'')}" class="underline">Call</a>` : ""}
         </div>
       </div>
     `;
-    if (i === 0) {
-      a.classList.add("ring-2","ring-yellow-400");
-    }
+    if (i === 0) a.classList.add("ring-2","ring-yellow-400");
     list.appendChild(a);
   });
 }
 
-/* ==============================
-   YELP INTEGRATION + CONTROLS
-============================== */
+/* YELP + CONTROLS */
 let currentSort = "best_match";
 let openNow = true;
 let currentRadius = 8000;
-let lastGeo = null;        // { latitude, longitude } if used
-let lastLocation = null;   // string location if used
+let lastGeo = null;
+let lastLocation = null;
 let baseParams = null;
 let filterState = { highRated: false, budget: false, nearby: false };
 
@@ -357,14 +320,12 @@ function readFilters() {
   filterState.nearby = !!document.getElementById("filter-nearby")?.checked;
   return filterState;
 }
-
 function applyClientFilters(items) {
   let list = [...items];
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
-  if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2); // $ or $$
+  if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
   return list;
 }
-
 async function callYelp(params) {
   const resp = await fetch('/.netlify/functions/yelp-search', {
     method: 'POST',
@@ -378,7 +339,6 @@ async function callYelp(params) {
   const data = await resp.json();
   return data.businesses || [];
 }
-
 async function doSearch(overrides = {}) {
   readFilters();
   const params = {
@@ -387,10 +347,8 @@ async function doSearch(overrides = {}) {
     open_now: openNow,
     radius: currentRadius,
     limit: 20,
-    filters: { openNow, nearby: filterState.nearby },
     ...overrides
   };
-
   if (lastGeo) {
     params.latitude = lastGeo.latitude;
     params.longitude = lastGeo.longitude;
@@ -399,7 +357,6 @@ async function doSearch(overrides = {}) {
     params.location = lastLocation;
     delete params.latitude; delete params.longitude;
   }
-
   showSkeletons();
   try {
     const results = await callYelp(params);
@@ -408,9 +365,9 @@ async function doSearch(overrides = {}) {
   } catch (e) {
     const list = document.getElementById("results-list");
     list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message}</div>`;
+    toggleWidenFab(true);
   }
 }
-
 function showSkeletons() {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
@@ -427,14 +384,13 @@ function showSkeletons() {
     list.appendChild(card);
   }
 }
-
 async function initYelpResults() {
-  // Controls
   const bestBtn = document.getElementById("sort-best");
   const ratingBtn = document.getElementById("sort-rating");
   const distanceBtn = document.getElementById("sort-distance");
   const openChk = document.getElementById("open-now");
   const widenBtn = document.getElementById("btn-widen");
+  const widenFab = document.getElementById("try-radius-fab");
   const hiChk = document.getElementById("filter-highrated");
   const budChk = document.getElementById("filter-budget");
   const nearChk = document.getElementById("filter-nearby");
@@ -453,14 +409,13 @@ async function initYelpResults() {
   distanceBtn?.addEventListener("click", () => { currentSort = "distance"; setActive(distanceBtn); doSearch(); });
   openChk?.addEventListener("change", () => { openNow = !!openChk.checked; doSearch(); });
   widenBtn?.addEventListener("click", () => { currentRadius = Math.min(16000, Math.round(currentRadius * 1.5)); doSearch(); });
+  widenFab?.addEventListener("click", () => { currentRadius = Math.min(16000, Math.round(currentRadius * 1.5)); doSearch(); });
   hiChk?.addEventListener("change", () => doSearch());
   budChk?.addEventListener("change", () => doSearch());
   nearChk?.addEventListener("change", () => doSearch());
 
-  // Base params from answers
   baseParams = mapAnswersToParams();
 
-  // Try geolocation first
   const geo = await new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
@@ -476,7 +431,6 @@ async function initYelpResults() {
     return;
   }
 
-  // Manual fallback
   const locBox = document.getElementById("location-fallback");
   locBox?.classList.remove("hidden");
 
@@ -495,18 +449,13 @@ async function initYelpResults() {
   manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
 }
 
-/* ==============================
-   RESTART
-============================== */
+/* RESTART */
 const restartBtn = document.getElementById("restart-btn");
 if (restartBtn) {
   restartBtn.addEventListener("click", () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
     currentQuestion = 0;
     answers = [];
-
-    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
-    if (window.loadingAriaInterval) { clearInterval(window.loadingAriaInterval); window.loadingAriaInterval = null; }
 
     document.getElementById("question-progress")?.parentElement?.setAttribute("aria-valuenow", "0");
     document.getElementById("progress-bar")?.parentElement?.setAttribute("aria-valuenow", "0");
@@ -521,7 +470,6 @@ if (restartBtn) {
     loadingContainer.classList.add("hidden");
     quizContainer.classList.remove("hidden");
 
-    // Reset Yelp state
     currentSort = "best_match";
     openNow = true;
     currentRadius = 8000;
@@ -538,9 +486,7 @@ if (restartBtn) {
   });
 }
 
-/* ==============================
-   INIT
-============================== */
+/* INIT */
 showQuestion();
 updateQuestionProgress();
 attachButtonEffects();
