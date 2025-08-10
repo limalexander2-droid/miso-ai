@@ -1,3 +1,4 @@
+
 let currentQuestion = 0;
 let answers = [];
 
@@ -120,8 +121,143 @@ function selectAnswer(answer) {
   }
 }
 
-// Show results placeholder
-function showResults() {
+// --- NEW: Simple mapping from quiz answers to Yelp params ---
+function buildYelpParams(answers) {
+  // Defaults
+  const params = {
+    term: "restaurants",
+    radius: 8000,
+    open_now: true,
+    sort_by: "best_match",
+    limit: 20
+  };
+
+  // Time budget => delivery method, radius
+  const timeAns = answers.find(a => a.question.startsWith("How much time"));
+  if (timeAns) {
+    if (timeAns.answer.includes("Less than 15")) params.radius = 2000;
+    else if (timeAns.answer.includes("About 30")) params.radius = 5000;
+    else params.radius = 8000;
+  }
+
+  // Price
+  const priceAns = answers.find(a => a.question.startsWith("How much are you looking"));
+  if (priceAns) {
+    if (priceAns.answer.includes("Under $10")) params.price = "1";
+    else if (priceAns.answer.includes("$10–$20")) params.price = "1,2";
+    else if (priceAns.answer.includes("$20–$40")) params.price = "2,3";
+    else params.price = "2,3,4";
+  }
+
+  // Cravings => term expansion
+  const craveAns = answers.find(a => a.question.startsWith("Are you craving"));
+  if (craveAns) {
+    const map = {
+      "Spicy": ["spicy", "thai", "sichuan", "hot chicken", "tacos"],
+      "Sweet": ["dessert", "ice cream", "frozen yogurt", "gelato", "bakery"],
+      "Hot and hearty": ["ramen", "barbecue", "burgers", "pasta"],
+      "Fresh and light": ["salad", "poke", "mediterranean", "sushi"],
+      "No specific craving": ["restaurants"]
+    };
+    const terms = map[craveAns.answer] || ["restaurants"];
+    params.term = terms.join(", ");
+  }
+
+  // Dietary goals => categories boost (Yelp uses 'term' + categories loosely; we’ll just add keywords into term)
+  const dietAns = answers.find(a => a.question.startsWith("Any dietary goals"));
+  if (dietAns) {
+    if (dietAns.answer.includes("Vegetarian")) params.term += ", vegetarian, vegan";
+    if (dietAns.answer.includes("Gluten-Free")) params.term += ", gluten-free";
+    if (dietAns.answer.includes("Low-Carb")) params.term += ", keto";
+    if (dietAns.answer.includes("High-Protein")) params.term += ", steakhouse, grill";
+    if (dietAns.answer.includes("Weight")) params.term += ", healthy";
+  }
+
+  // Eating method => open_now (keep) and potential sort tweak
+  const methodAns = answers.find(a => a.question.startsWith("How would you like to eat"));
+  if (methodAns) {
+    if (methodAns.answer.includes("Delivery")) params.sort_by = "rating";
+    if (methodAns.answer.includes("Drive-thru")) params.term += ", drive-thru";
+    // Dine-in/Takeout don't need special handling here
+  }
+
+  return params;
+}
+
+// Attempt to get geolocation (non-blocking)
+function getGeolocation(timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) return resolve(null);
+    let done = false;
+    const timer = setTimeout(() => { if (!done) resolve(null); }, timeoutMs);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        done = true;
+        clearTimeout(timer);
+        resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      },
+      () => {
+        done = true;
+        clearTimeout(timer);
+        resolve(null);
+      },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: timeoutMs }
+    );
+  });
+}
+
+// Render Yelp results into the results-display
+function renderYelpResults(list, where) {
+  const display = document.getElementById("results-display");
+  if (!display) return;
+
+  if (!Array.isArray(list) || list.length === 0) {
+    display.innerHTML = `
+      <div class="text-center">
+        <p class="mb-2">No matching places found ${where ? `near <strong>${where}</strong>` : "near you"}.</p>
+        <p class="text-sm text-gray-600">Try widening the distance, loosening price limits, or picking a different craving.</p>
+      </div>
+    `;
+    return;
+  }
+
+  display.innerHTML = list.map(b => {
+    const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) + " mi" : "";
+    const cat = (b.categories || []).slice(0, 3).join(", ");
+    const price = b.price ? ` • ${b.price}` : "";
+    const statusBadge =
+      b.open_status === "open"
+        ? `<span class="text-green-700 bg-green-100 text-xs px-2 py-1 rounded-md">Open now</span>`
+        : (b.open_status === "closed"
+            ? `<span class="text-red-700 bg-red-100 text-xs px-2 py-1 rounded-md">Closed</span>`
+            : `<span class="text-gray-700 bg-gray-100 text-xs px-2 py-1 rounded-md">Hours not listed</span>`);
+
+    const callBtn = b.phone
+      ? `<a href="tel:${b.phone.replace(/[^+\d]/g,'')}" class="inline-block text-sm px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50">Call</a>`
+      : "";
+
+    return `
+      <div class="flex gap-3 p-3 mb-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+        <img src="${b.image_url || ''}" alt="" class="w-20 h-20 object-cover rounded-lg bg-gray-100" onerror="this.style.display='none'"/>
+        <div class="flex-1 text-sm">
+          <div class="flex items-center justify-between gap-2">
+            <a href="${b.url}" target="_blank" rel="noopener" class="font-semibold text-rose-700 hover:underline">${b.name}</a>
+            <div class="flex items-center gap-2">
+              ${statusBadge}
+              ${callBtn}
+            </div>
+          </div>
+          <div class="text-gray-600">${cat}${price}${miles ? ` • ${miles}` : ""}</div>
+          <div class="text-gray-700">${b.address || ""}</div>
+          <div class="text-gray-700">${(b.rating ?? "–")}★ (${b.review_count ?? 0} reviews)</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+// Show results placeholder + fetch Yelp results
+async function showResults() {
   // ✅ Smoothly complete the thin question-progress bar
   const qBar = document.getElementById("question-progress");
   if (qBar) {
@@ -184,7 +320,37 @@ function showResults() {
   updateLoadingMessage(); // first message immediately
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
-  // 4) Simulate "thinking" to line up with the bar animation
+  // --- NEW: Build Yelp params from answers
+  const yelpParams = buildYelpParams(answers);
+
+  // --- NEW: Try geolocation, but don't block for more than ~1s beyond bar
+  let geo = null;
+  try {
+    geo = await Promise.race([getGeolocation(2000), new Promise(res => setTimeout(() => res(null), 2000))]);
+  } catch (_) {
+    geo = null;
+  }
+
+  // --- NEW: Prepare request body
+  const body = {
+    ...yelpParams,
+    ...(geo ? { latitude: geo.latitude, longitude: geo.longitude } : { location: "San Angelo, TX" }) // fallback city
+  };
+
+  // --- NEW: Call Netlify function while bar is animating
+  let apiResult = { businesses: [] };
+  try {
+    const res = await fetch("/.netlify/functions/yelp-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    apiResult = await res.json();
+  } catch (err) {
+    apiResult = { error: String(err), businesses: [] };
+  }
+
+  // 4) Reveal results after the bar finishes (~2.8s)
   setTimeout(() => {
     if (window.messageInterval) {
       clearInterval(window.messageInterval);
@@ -193,16 +359,26 @@ function showResults() {
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
 
-    // Fill the existing results area
     const display = document.getElementById("results-display");
-    if (display) {
-      display.innerHTML = answers
-        .map(a => `<p><strong>${a.question}</strong><br><span class="text-rose-600">→ ${a.answer}</span></p>`)
-        .join("<hr class='my-2' />");
+    if (!display) return;
+
+    // If there was an error from the function or Yelp
+    if (apiResult && apiResult.error) {
+      display.innerHTML = `
+        <div class="text-left text-sm bg-white p-4 rounded-xl shadow-inner border border-red-200">
+          <p class="text-red-700 font-medium mb-1">We couldn’t fetch live results.</p>
+          <pre class="whitespace-pre-wrap text-xs text-gray-700">${apiResult.error}</pre>
+          <p class="text-gray-600 mt-2">Tip: ensure your Netlify function is deployed and YELP_API_KEY is set.</p>
+        </div>
+      `;
+      return;
     }
+
+    // Render businesses
+    const where = geo ? "your location" : "San Angelo, TX";
+    renderYelpResults(apiResult.businesses || [], where);
   }, 2800); // ~matches the 2.8s width animation
 }
-
 
 // Restart quiz
 const restartBtn = document.getElementById("restart-btn");
