@@ -345,6 +345,9 @@ function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
 
+  // ✅ Cap to 10 results
+  businesses = (businesses || []).slice(0, 10);
+
   if (!businesses.length) {
     toggleWidenFab(true);
     list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm"><p class="text-gray-700 text-sm">No matching restaurants found. Try widening the distance or clearing price filters.</p></div>`;
@@ -419,17 +422,27 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 
+// ✅ New: True only if the business is currently open
+function isActuallyOpen(b) {
+  if (typeof b.open_status === "string") return b.open_status === "open"; // normalized by backend
+  if (typeof b.is_open_now === "boolean") return b.is_open_now;          // Yelp passthrough
+  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
+  return false; // unknown -> treat as closed when filtering for openNow
+}
+
 function applyClientFilters(items) {
   let list = [...items];
 
-  // NEW: drop hotels/inns/lodging
+  // drop hotels/inns/lodging
   list = list.filter(b => !isHotelLike(b));
+
+  // ✅ Strict “Open now” filter from UI toggle
+  if (openNow) list = list.filter(isActuallyOpen);
 
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
   return list;
 }
-
 
 async function callYelp(params) {
   const resp = await fetch('/.netlify/functions/yelp-search', {
@@ -457,9 +470,9 @@ function buildQuerySet(baseParams) {
   const qs = [];
   const kw = (baseParams.keywords || []).slice(0, 6);
 
-  // ✅ Always include "restaurants" in category searches
+  // Always include "restaurants" in category searches
   const catSet = new Set((baseParams.categories || []).slice(0, 5));
-  catSet.add('restaurants'); // ensure we're only searching restaurant-like categories
+  catSet.add('restaurants');
   const catList = [...catSet];
   if (catList.length) qs.push({ categories: catList.join(",") });
 
@@ -481,7 +494,6 @@ function buildQuerySet(baseParams) {
     return true;
   });
 }
-
 
 async function mergedSearch(base, querySet, targetCount = 20) {
   let all = [];
@@ -589,7 +601,11 @@ async function initYelpResults() {
   bestBtn?.addEventListener("click", () => { currentSort = "best_match"; setActive(bestBtn); doSearch(); });
   ratingBtn?.addEventListener("click", () => { currentSort = "rating"; setActive(ratingBtn); doSearch(); });
   distanceBtn?.addEventListener("click", () => { currentSort = "distance"; setActive(distanceBtn); doSearch(); });
+
+  // Sync initial "Open now" from checkbox, then react to changes
+  openNow = !!openChk?.checked;
   openChk?.addEventListener("change", () => { openNow = !!openChk.checked; doSearch(); });
+
   widenBtn?.addEventListener("click", () => { currentRadius = Math.min(32000, Math.round(currentRadius * 1.5)); doSearch(); });
   widenFab?.addEventListener("click", () => { currentRadius = Math.min(32000, Math.round(currentRadius * 1.5)); doSearch(); });
   hiChk?.addEventListener("change", () => doSearch());
