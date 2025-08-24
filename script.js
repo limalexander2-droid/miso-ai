@@ -8,6 +8,10 @@ const FLAGS = {
   analytics: true,
   relaxWhenEmpty: true,
   cacheLastResults: true
+, 
+  enableFastPath: false
+, 
+  enableGroupMode: false
 };
 
 /* ==============================
@@ -172,10 +176,12 @@ function loadLastPrefs() {
   try { return JSON.parse(localStorage.getItem(LAST_PREFS_KEY) || "null"); } catch { return null; }
 }
 function saveLastPrefs() {
+  if (!FLAGS.enableFastPath) return;
   const prefs = { answers, ts: Date.now(), group: !!groupModeChk?.checked };
   try { localStorage.setItem(LAST_PREFS_KEY, JSON.stringify(prefs)); } catch {}
 }
 function maybeShowFastPath() {
+  if (!FLAGS.enableFastPath) return;
   const last = loadLastPrefs();
   if (last && Array.isArray(last.answers) && last.answers.length) {
     fastPath?.classList.remove("hidden");
@@ -264,7 +270,7 @@ function mapAnswersToParams() {
 
   const { keywords, categories } = expandedSearchTerms(tokens);
 
-  const groupMode = !!groupModeChk?.checked || /group|big/i.test(who);
+  const groupMode = FLAGS.enableGroupMode && !!groupModeChk?.checked || /group|big/i.test(who);
   return { keywords, categories, price, radius, transactions, groupMode };
 }
 
@@ -531,7 +537,7 @@ async function mergedSearch(base, querySet, targetCount = 20) {
 
 async function doSearch(overrides = {}) {
   readFilters();
-  const groupMode = !!groupModeChk?.checked;
+  const groupMode = FLAGS.enableGroupMode && !!groupModeChk?.checked;
   const sort_for_group = groupMode ? "rating" : (filterState.nearby ? "distance" : currentSort);
   const base = {
     sort_by: sort_for_group,
