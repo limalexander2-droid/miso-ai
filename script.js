@@ -456,7 +456,12 @@ function uniqById(items) {
 function buildQuerySet(baseParams) {
   const qs = [];
   const kw = (baseParams.keywords || []).slice(0, 6);
-  const cat = (baseParams.categories || []).slice(0, 5);
+
+  // ✅ Always include "restaurants" in category searches
+  const catSet = new Set((baseParams.categories || []).slice(0, 5));
+  catSet.add('restaurants'); // ensure we're only searching restaurant-like categories
+  const catList = [...catSet];
+  if (catList.length) qs.push({ categories: catList.join(",") });
 
   // 1) primary combined keyword term
   if (kw.length) qs.push({ term: kw.slice(0, 3).join(" ") });
@@ -464,10 +469,7 @@ function buildQuerySet(baseParams) {
   // 2) single-strong keywords
   kw.slice(0, 4).forEach(w => qs.push({ term: w }));
 
-  // 3) categories (comma-separated)
-  if (cat.length) qs.push({ categories: cat.join(",") });
-
-  // 4) generic fallback
+  // 3) generic fallback
   qs.push({ term: "restaurants" });
 
   // de-dup
@@ -479,6 +481,7 @@ function buildQuerySet(baseParams) {
     return true;
   });
 }
+
 
 async function mergedSearch(base, querySet, targetCount = 20) {
   let all = [];
