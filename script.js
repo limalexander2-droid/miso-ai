@@ -1,4 +1,15 @@
 /* ==============================
+   FLAGS (feature toggles)
+============================== */
+const FLAGS = {
+  enableBackButton: true,
+  capTopResults: true,
+  tenCapCount: 10,
+  analytics: true,
+  relaxWhenEmpty: true
+};
+
+/* ==============================
    SETTINGS
 ============================== */
 const ENABLE_ANIM = false; // keep taps snappy
@@ -8,12 +19,15 @@ const ENABLE_ANIM = false; // keep taps snappy
 ============================== */
 let currentQuestion = 0;
 let answers = [];
+let quizStarted = false;
+let firstSatisfyingFired = false;
 
 const container = document.getElementById("question-container");
 const answerButtons = document.getElementById("answer-buttons");
 const resultContainer = document.getElementById("result");
 const loadingContainer = document.getElementById("loading");
 const quizContainer = document.getElementById("quiz");
+const backBtn = document.getElementById("back-btn");
 
 const loadingMessages = [
   { emoji: "🍣", text: "Plating your cravings…" },
@@ -26,6 +40,19 @@ const loadingMessages = [
   { emoji: "🧂", text: "Scouting the sauce section…" },
   { emoji: "👨‍🍳", text: "Consulting my inner foodie…" }
 ];
+
+/* ==============================
+   LIGHTWEIGHT ANALYTICS
+============================== */
+window.__misoEvents = window.__misoEvents || [];
+function track(event, payload = {}) {
+  if (!FLAGS.analytics) return;
+  try {
+    const rec = { event, t: Date.now(), ...payload };
+    window.__misoEvents.push(rec);
+    // console.debug("[analytics]", rec);
+  } catch { /* no-op */ }
+}
 
 /* ==============================
    QUESTION PROGRESS BAR
@@ -47,13 +74,13 @@ const questions = [
   { question: "How hungry are you right now?", options: ["Just a little hungry", "Pretty hungry", "Starving", "Planning ahead"] },
   { question: "How much time do you have to eat?", options: ["Less than 15 minutes", "About 30 minutes", "An hour or more", "No rush"] },
   { question: "Who are you eating with?", options: ["Just me", "With a friend or partner", "Small group (3–4)", "Big group or family", "Doesn’t matter"] },
-  { question: "What’s your current mood?", options: ["Cozy / comfort food", "Energized / healthy", "Indulgent / treat yourself", "Adventurous", "Chill / no strong cravings"] },
-  { question: "Are you craving anything specific?", options: ["Spicy", "Sweet", "Hot and hearty", "Fresh and light", "No specific craving"] },
-  { question: "Any dietary goals or restrictions?", options: ["Weight loss / low-cal", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "No restrictions"] },
+  { question: "What vibe tonight?", options: ["Cozy / comfort food", "Energized / healthy", "Indulgent / treat yourself", "Adventurous", "Chill / no strong cravings"] },
+  { question: "Leaning toward…", options: ["Spicy", "Sweet", "Hot and hearty", "Fresh and light", "Surprise me"] },
+  { question: "Any dietary goals or restrictions?", options: ["Weight Loss", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "No restrictions"] },
   { question: "How much are you looking to spend?", options: ["Under $10", "$10–$20", "$20–$40", "Money’s not a concern"] },
   { question: "How far are you willing to go?", options: ["Walking distance", "Short drive (under 10 mins)", "15–30 mins", "I'll go anywhere"] },
   { question: "How would you like to eat today?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "Doesn’t matter"] },
-  { question: "Any special occasion or vibe?", options: ["Just a regular meal", "Quick lunch break", "Date night", "Post-workout", "Comfort after a long day", "Celebration"] }
+  { question: "Any special occasion or vibe?", options: ["Solo bite", "Quick lunch break", "Friends", "Date night", "Birthday/Anniv", "Comfort after a long day"] }
 ];
 
 /* ==============================
@@ -88,13 +115,13 @@ async function transitionQuestion(renderFn) {
 const emojiMap = [
   { match: /hungry|time|plan/i, emoji: '⏱️' },
   { match: /who|with/i, emoji: '👥' },
-  { match: /mood|comfort|healthy/i, emoji: '🥗' },
-  { match: /craving|spicy|sweet/i, emoji: '🍔' },
-  { match: /diet|keto|protein|gluten/i, emoji: '🥦' },
+  { match: /vibe|mood|comfort|healthy/i, emoji: '🥗' },
+  { match: /leaning|craving|spicy|sweet/i, emoji: '🍔' },
+  { match: /diet|keto|protein|gluten|vegetarian|vegan/i, emoji: '🥦' },
   { match: /spend|budget|price/i, emoji: '💸' },
   { match: /distance|far|drive/i, emoji: '🗺️' },
   { match: /eat today|dine|delivery|takeout/i, emoji: '🍽️' },
-  { match: /special|occasion|vibe|date/i, emoji: '✨' },
+  { match: /special|occasion|vibe|date|birthday/i, emoji: '✨' },
 ];
 function setQuestionEmoji(text) {
   const el = document.getElementById('question-emoji');
@@ -110,6 +137,11 @@ function setQuestionEmoji(text) {
 function showQuestion() {
   resultContainer.classList.add("hidden");
   quizContainer.classList.remove("hidden");
+
+  if (!quizStarted) {
+    quizStarted = true;
+    track("quiz_start");
+  }
 
   const progressIndicator = document.getElementById("progress-indicator");
   if (progressIndicator) progressIndicator.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
@@ -132,6 +164,15 @@ function showQuestion() {
       answerButtons.appendChild(button);
     });
     attachButtonEffects(answerButtons);
+
+    // Back button state
+    if (FLAGS.enableBackButton) {
+      backBtn.style.display = "inline-flex";
+      backBtn.disabled = currentQuestion === 0;
+      backBtn.setAttribute("aria-disabled", currentQuestion === 0 ? "true" : "false");
+    } else {
+      backBtn.style.display = "none";
+    }
   };
 
   transitionQuestion(render);
@@ -146,9 +187,20 @@ function selectAnswer(answer) {
   if (currentQuestion < questions.length) {
     showQuestion();
   } else {
+    track("quiz_complete", { total_q: questions.length });
     showResults();
   }
 }
+
+function goBackOne() {
+  if (!FLAGS.enableBackButton) return;
+  if (currentQuestion === 0) return;
+  currentQuestion -= 1;
+  answers.pop();
+  track("quiz_back", { to_q_index: currentQuestion });
+  showQuestion();
+}
+backBtn?.addEventListener("click", goBackOne);
 
 /* ==============================
    RESULTS + LOADING
@@ -180,11 +232,12 @@ function showResults() {
   updateLoadingMessage();
   window.messageInterval = setInterval(updateLoadingMessage, 800);
 
+  const t0 = performance.now();
   setTimeout(async () => {
     if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
     loadingContainer.classList.add("hidden");
     resultContainer.classList.remove("hidden");
-    await initYelpResults();
+    await initYelpResults(t0);
   }, 2200);
 }
 
@@ -273,11 +326,11 @@ function expandedSearchTerms(rawTerms) {
 function mapAnswersToParams() {
   const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
 
-  const craving = find("Are you craving anything specific?");
-  const mood = find("What’s your current mood?");
-  const diet = find("Any dietary goals or restrictions?");
+  const craving = find("Leaning toward");
+  const mood = find("What vibe");
+  const diet = find("Any dietary");
   const budget = find("How much are you looking to spend?");
-  const distance = find("How far are you willing to go?");
+  const distance = find("How far");
   const method = find("How would you like to eat today?");
 
   // topic tokens from answers
@@ -341,12 +394,25 @@ function toggleWidenFab(show) {
   fab.classList.toggle("hidden", !show);
 }
 
+function googleMapsHref(b) {
+  // Prefer coordinates; fallback to name + address query
+  try {
+    if (b.coordinates && typeof b.coordinates.latitude === "number" && typeof b.coordinates.longitude === "number") {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.coordinates.latitude + "," + b.coordinates.longitude)}&query_place_id=`;
+    }
+    const q = [b.name, b.address].filter(Boolean).join(" ");
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  } catch { return ""; }
+}
+
 function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
 
-  // ✅ Cap to 10 results
-  businesses = (businesses || []).slice(0, 10);
+  // Apply cap before render (defensive; also applied after filters)
+  if (FLAGS.capTopResults) {
+    businesses = (businesses || []).slice(0, FLAGS.tenCapCount);
+  }
 
   if (!businesses.length) {
     toggleWidenFab(true);
@@ -358,10 +424,10 @@ function renderBusinesses(businesses = []) {
 
   businesses.forEach((b, i) => {
     const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) : "";
-    const a = document.createElement("a");
-    a.href = b.url || "#";
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
+    const cats = Array.isArray(b.categories)
+      ? b.categories.map(c => (typeof c === "string" ? c : (c.title || c.alias || ""))).filter(Boolean).join(", ")
+      : "";
+    const a = document.createElement("div");
     a.className = "relative p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex gap-4";
     a.innerHTML = `
       ${i === 0 ? `<div class="top-pick-badge">Top Pick</div>` : ""}
@@ -375,26 +441,43 @@ function renderBusinesses(businesses = []) {
           ${b.rating ? `⭐ ${b.rating} · ` : ""}${b.review_count ? `${b.review_count} reviews` : ""}
         </div>
         <div class="text-xs text-gray-600 mt-1">
-          ${Array.isArray(b.categories) ? b.categories.join(", ") : ""}
+          ${cats}
         </div>
         <div class="text-xs text-gray-600 mt-1">
           📍 ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}
         </div>
-        <div class="text-xs text-gray-700 mt-1">
-          ${hoursOrCallLine(b)} ${b.phone ? `• <a href="tel:${b.phone.replace(/[^\d+]/g,'')}" class="underline">Call</a>` : ""}
+        <div class="flex flex-wrap gap-3 items-center text-xs text-gray-700 mt-2">
+          <span>${hoursOrCallLine(b)}</span>
+          ${b.phone ? `<a href="tel:${(b.phone||'').replace(/[^\\d+]/g,'')}" class="underline">Call</a>` : ""}
+          ${b.url ? `<a href="${b.url}" target="_blank" rel="noopener noreferrer" class="underline">Yelp</a>` : ""}
+          <a href="${googleMapsHref(b)}" target="_blank" rel="noopener noreferrer" class="underline">Directions</a>
         </div>
       </div>
     `;
     if (i === 0) a.classList.add("ring-2","ring-yellow-400");
+
+    // Click tracking on links inside card
+    a.querySelectorAll("a[href]").forEach(link => {
+      link.addEventListener("click", () => {
+        track("result_click", { biz_id: b.id || "", action: /maps|google/.test(link.href) ? "maps" : ( /yelp/.test(link.href) ? "yelp" : "link" ), position: i+1 });
+        if (!firstSatisfyingFired) {
+          firstSatisfyingFired = true;
+          track("first_satisfying_choice", { biz_id: b.id || "", position: i+1 });
+        }
+      }, { passive: true });
+    });
+
     list.appendChild(a);
   });
+
+  track("results_render", { count: businesses.length });
 }
 
 /* ==============================
    YELP INTEGRATION + CONTROLS
 ============================== */
 let currentSort = "best_match";
-let openNow = false;         // default off for better hit rate; user can toggle on
+let openNow = false;         // initial will sync from checkbox
 let currentRadius = 8000;
 let lastGeo = null;
 let lastLocation = null;
@@ -418,11 +501,11 @@ function isHotelLike(b) {
   const name = (b.name || '').toLowerCase();
 
   // Be careful not to match "Cinnabon" etc — use word boundaries
-  const banned = /\b(hotel|motels?|hostels?|lodging|resorts?|bed\s*&\s*breakfast|b&b|guest\s*house|inns?)\b/;
+  const banned = /\b(hotel|motels?|hostels?|lodging|resorts?|bed\\s*&\\s*breakfast|b&b|guest\\s*house|inns?)\\b/;
   return banned.test(asText) || banned.test(name);
 }
 
-// ✅ New: True only if the business is currently open
+// True only if the business is currently open
 function isActuallyOpen(b) {
   if (typeof b.open_status === "string") return b.open_status === "open"; // normalized by backend
   if (typeof b.is_open_now === "boolean") return b.is_open_now;          // Yelp passthrough
@@ -436,11 +519,15 @@ function applyClientFilters(items) {
   // drop hotels/inns/lodging
   list = list.filter(b => !isHotelLike(b));
 
-  // ✅ Strict “Open now” filter from UI toggle
+  // Strict “Open now” filter from UI toggle
   if (openNow) list = list.filter(isActuallyOpen);
 
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
+
+  // Cap again after filtering
+  if (FLAGS.capTopResults) list = list.slice(0, FLAGS.tenCapCount);
+
   return list;
 }
 
@@ -505,7 +592,7 @@ async function mergedSearch(base, querySet, targetCount = 20) {
     }
   }
   // If still empty, relax once (open_now off + wider radius + broader terms)
-  if (!all.length) {
+  if (!all.length && FLAGS.relaxWhenEmpty) {
     const relaxed = { ...base, open_now: false, radius: Math.min(32000, (base.radius || 8000) * 2) };
     const relaxedSet = [...querySet, { term: "food" }, { term: "dinner" }, { term: "lunch" }, { term: "dessert" }, { term: "ice cream" }];
     for (const q of relaxedSet) {
@@ -550,10 +637,13 @@ async function doSearch(overrides = {}) {
     const filtered = applyClientFilters(results);
     renderBusinesses(filtered);
     toggleWidenFab(!filtered.length);
+    track("results_shown", { count: filtered.length });
   } catch (e) {
     const list = document.getElementById("results-list");
-    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message}</div>`;
+    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message} <button id="retry-btn" class="ml-2 underline">Retry</button></div>`;
+    document.getElementById("retry-btn")?.addEventListener("click", () => doSearch(overrides));
     toggleWidenFab(true);
+    track("results_error", { message: String(e && e.message || e) });
   }
 }
 
@@ -577,7 +667,7 @@ function showSkeletons() {
 /* ==============================
    INIT RESULTS (controls + location + first fetch)
 ============================== */
-async function initYelpResults() {
+async function initYelpResults(t0 = performance.now()) {
   // Controls
   const bestBtn = document.getElementById("sort-best");
   const ratingBtn = document.getElementById("sort-rating");
@@ -628,26 +718,29 @@ async function initYelpResults() {
   if (geo) {
     lastGeo = geo;
     await doSearch();
-    return;
+  } else {
+    // Manual fallback UI
+    const locBox = document.getElementById("location-fallback");
+    locBox?.classList.remove("hidden");
+
+    const manualInput = locBox ? locBox.querySelector("#manual-location") : null;
+    const useBtn = locBox ? locBox.querySelector("#use-location-btn") : null;
+
+    const triggerSearch = async () => {
+      const value = (manualInput?.value || "").trim();
+      if (!value) return;
+      lastLocation = value;
+      lastGeo = null;
+      await doSearch();
+    };
+
+    useBtn?.addEventListener("click", triggerSearch);
+    manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
   }
 
-  // Manual fallback UI
-  const locBox = document.getElementById("location-fallback");
-  locBox?.classList.remove("hidden");
-
-  const manualInput = locBox ? locBox.querySelector("#manual-location") : null;
-  const useBtn = locBox ? locBox.querySelector("#use-location-btn") : null;
-
-  const triggerSearch = async () => {
-    const value = (manualInput?.value || "").trim();
-    if (!value) return;
-    lastLocation = value;
-    lastGeo = null;
-    await doSearch();
-  };
-
-  useBtn?.addEventListener("click", triggerSearch);
-  manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
+  // Mark results latency
+  const t1 = performance.now();
+  track("results_latency_ms", { ms: Math.max(0, Math.round(t1 - t0)) });
 }
 
 /* ==============================
@@ -659,6 +752,8 @@ if (restartBtn) {
     window.scrollTo({ top: 0, behavior: "smooth" });
     currentQuestion = 0;
     answers = [];
+    quizStarted = false;
+    firstSatisfyingFired = false;
 
     document.getElementById("question-progress")?.parentElement?.setAttribute("aria-valuenow", "0");
     document.getElementById("progress-bar")?.parentElement?.setAttribute("aria-valuenow", "0");
@@ -675,7 +770,7 @@ if (restartBtn) {
 
     // Reset Yelp state
     currentSort = "best_match";
-    openNow = false;
+    openNow = !!document.getElementById("open-now")?.checked;
     currentRadius = 8000;
     lastGeo = null;
     lastLocation = null;

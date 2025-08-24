@@ -58,7 +58,7 @@
 <body class="min-h-screen flex items-center justify-center px-4 py-8 font-sans overflow-x-hidden">
 
   <!-- QUIZ -->
-  <main id="quiz" class="w-full max-w-xl bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 md:space-y-6 fade-in">
+  <main id="quiz" class="w-full max-w-xl bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 md:space-y-6 fade-in" data-testid="quiz-root">
     <h1 class="text-2xl sm:text-3xl font-semibold text-center text-slate-800 mb-2">🍜 Miso AI</h1>
     <p class="text-center text-gray-700 text-base italic">"Tell me how you feel — I’ll tell you what to eat."</p>
 
@@ -75,18 +75,24 @@
 
     <div id="question-container" class="mt-2"></div>
     <div id="answer-buttons" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"></div>
+
+    <!-- Back nav (flag-controlled) -->
+    <div id="quiz-nav" class="flex justify-between items-center mt-2">
+      <button id="back-btn" class="chip" aria-label="Go back one step">← Back</button>
+      <span class="sr-only" aria-live="polite"></span>
+    </div>
   </main>
 
   <!-- LOADING -->
-  <section id="loading" class="hidden w-full max-w-xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 text-center fade-in">
+  <section id="loading" class="hidden w-full max-w-xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 text-center fade-in" data-testid="loading">
     <div class="flex flex-col items-center space-y-4">
-      <svg class="animate-spin h-10 w-10" style="color: var(--miso-accent)" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <svg class="animate-spin h-10 w-10" style="color: var(--miso-accent)" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
       </svg>
 
       <h2 class="text-xl font-semibold text-slate-800">Miso is thinking...</h2>
-      <span id="loading-emoji" class="text-5xl">🍣</span>
+      <span id="loading-emoji" class="text-5xl" aria-hidden="true">🍣</span>
       <p class="text-gray-600 text-sm" aria-live="polite">Finding restaurants that match your cravings, mood, and vibe...</p>
 
       <div class="w-full bg-gray-200 h-3 rounded-full overflow-hidden mt-6" role="progressbar" aria-label="Loading results" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -106,7 +112,7 @@
   </section>
 
   <!-- RESULTS -->
-  <section id="result" class="hidden w-full max-w-3xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-6 sm:p-8 text-center fade-in">
+  <section id="result" class="hidden w-full max-w-3xl mt-8 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-6 sm:p-8 text-center fade-in" data-testid="results">
     <h2 class="text-2xl font-semibold text-slate-800 mb-2">🥢 Your Miso Recommendations</h2>
     <p class="text-gray-600 text-base mb-4">Here’s what we think will hit the spot.</p>
 
