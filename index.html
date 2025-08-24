@@ -33,7 +33,10 @@
   <main id="quiz" class="w-full max-w-xl bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 fade-in" aria-label="Quiz">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl sm:text-3xl font-semibold text-slate-800">🍜 Miso AI</h1>
-      
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" id="group-mode" class="h-4 w-4" />
+        <span>Group mode</span>
+      </label>
     </div>
     <p class="text-center text-gray-700 text-base italic">"Tell me how you feel — I’ll tell you what to eat."</p>
 
@@ -140,11 +143,11 @@
 
     <div id="results-list" class="grid grid-cols-1 gap-4 text-left mt-4"></div>
 
-    <div class="flex items-center justify-between mt-6">
+    <div class="mt-6 border-t border-gray-200 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <button id="restart-btn" class="text-white font-semibold py-2 px-6 rounded-xl shadow cta">Restart Quiz ↻</button>
-      <div class="text-xs text-gray-500 text-left max-w-[60ch]">
+      <p class="text-xs text-gray-500 leading-snug sm:text-right max-w-[65ch]">
         <strong>Privacy:</strong> Your location is used only to search nearby places. We don’t store it. API keys live on our server.
-      </div>
+      </p>
     </div>
   </section>
 

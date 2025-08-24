@@ -12,8 +12,7 @@ const FLAGS = {
   enableReranker: true, 
   enableWhyChips: true, 
   enableRollAgain: true, 
-  enableFastPath: false, 
-  labelOpenNeedsVerification: true};
+  enableFastPath: false};
 
 /* ==============================
    SETTINGS
@@ -120,7 +119,7 @@ function milesFromMeters(m){
    QUESTIONS (≤7)
 ============================== */
 const questions = [
-  { question: "What vibe tonight?", options: ["Cozy / comfort", "Healthy / light", "Indulgent", "Adventurous", "No strong preference"] },
+  { question: "What vibe for this meal?", options: ["Cozy / comfort", "Healthy / light", "Indulgent", "Adventurous", "No strong preference"] },
   { question: "Leaning toward…", options: ["Spicy", "Sweet", "Hot & hearty", "Fresh", "Surprise me"] },
   { question: "Diet or goals?", options: ["Weight Loss", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "None"] },
   { question: "Budget range?", options: ["Under $10", "$10–$20", "$20–$40", "Any budget"] },
@@ -354,23 +353,11 @@ function toggleSave(b) {
 }
 
 function hoursOrCallLine(b) {
-  const trustedOpen = (b && b.__verified && b.__is_open_now === true && b.__is_closed !== true);
-  const trustedClosed = (b && b.__verified && (b.__is_closed === true || b.__is_open_now === false));
-
-  if (trustedOpen) return "⏰ Open now";
-  if (trustedClosed) return "⏰ Closed now";
-
-  if (!FLAGS.labelOpenNeedsVerification && typeof b.is_open_now === "boolean") {
-    return b.is_open_now ? "⏰ Open now" : "⏰ Closed now";
+  if (b.has_hours) {
+    if (b.open_status === "open") return "⏰ Open now";
+    if (b.open_status === "closed") return "⏰ Closed now";
+    return "⏰ Hours available";
   }
-  if (!FLAGS.labelOpenNeedsVerification && typeof b.open_status === "string") {
-    return b.open_status === "open" ? "⏰ Open now" : (b.open_status === "closed" ? "⏰ Closed now" : "⏰ Hours available");
-  }
-
-  if (b.has_hours) return "⏰ Hours available";
-  if (b.phone) return `Hours not listed — tap to call 📞`;
-  return "Hours not listed";
-}
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
@@ -571,28 +558,17 @@ function localRerank(list){
 function generateWhyChips(b){
   if (!FLAGS.enableWhyChips) return [];
   const chips = [];
-
-  const verifiedOpen = (b && b.__verified && b.__is_open_now === true && b.__is_closed !== true);
-  const verifiedClosed = (b && b.__verified && (b.__is_closed === true || b.__is_open_now === false));
-  if (verifiedOpen) chips.push("Open now");
-  else if (verifiedClosed) chips.push("Closed now");
-
-  const m = typeof b.distance === "number" ? (b.distance / 1609.34) : null;
-  if (m != null) chips.push(m < 1 ? "Walkable" : `${m.toFixed(1)} mi`);
+  if (isActuallyOpen(b)) chips.push("Open now");
+  const m = milesFromMeters(b.distance);
+  if (m != null) { chips.push(m < 1 ? "Walkable" : `${m.toFixed(1)} mi`); }
   if ((b.rating||0) >= 4.5) chips.push("High rating");
-
-  if (typeof baseParams !== "undefined") {
-    const allowed = (baseParams && baseParams.price) ? new Set(String(baseParams.price).split(",").map(s => s.trim())) : null;
-    if (allowed) {
-      const lvl = (b.price||"").length;
-      if (allowed.has(String(lvl||""))) chips.push("Fits your budget");
-    } else if (b.price) {
-      chips.push(b.price);
-    }
+  const allowed = parsePriceSet(baseParams?.price);
+  if (allowed) {
+    const lvl = (b.price||"").length;
+    if (allowed.has(String(lvl||""))) chips.push("Fits your budget");
   } else if (b.price) {
     chips.push(b.price);
   }
-
   const keys = new Set([...(baseParams?.keywords||[]), ...(baseParams?.categories||[])]);
   const cats = (b.categories||[]).map(c => (typeof c==="string"?c:(c.alias||c.title||""))).join(" ").toLowerCase();
   for (const k of keys){
@@ -600,7 +576,7 @@ function generateWhyChips(b){
     if (!kk || kk.length < 3) continue;
     if (cats.includes(kk)) { chips.push(`Matches “${k}”`); break; }
   }
-
+  if (isIndependent(b)) chips.push("Local favorite");
   return chips.slice(0, 4);
 }
 
@@ -631,17 +607,9 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 function isActuallyOpen(b) {
-  if (!b) return false;
-  if (b.__verified) {
-    if (b.__is_closed === true) return false;
-    if (typeof b.__is_open_now === "boolean") return b.__is_open_now;
-  }
-  try {
-    if (typeof openNow !== "undefined" && openNow === true) {
-      if (typeof b.is_open_now === "boolean") return b.is_open_now;
-      if (typeof b.open_status === "string") return b.open_status === "open";
-    }
-  } catch {}
+  if (typeof b.open_status === "string") return b.open_status === "open";
+  if (typeof b.is_open_now === "boolean") return b.is_open_now;
+  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
   return false;
 }
 
