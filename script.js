@@ -12,7 +12,8 @@ const FLAGS = {
   enableReranker: true, 
   enableWhyChips: true, 
   enableRollAgain: true, 
-  enableFastPath: false};
+  enableFastPath: false, 
+  labelOpenNeedsVerification: true};
 
 /* ==============================
    SETTINGS
@@ -246,7 +247,7 @@ function maybeShowFastPath() {
     useLastBtn?.addEventListener("click", () => {
       answers = last.answers || [];
       currentQuestion = questions.length;
-      if (groupModeChk) { groupModeChk.checked = !!last.group; }
+      groupModeChk.checked = !!last.group;
       showResults();
       track("used_last_settings");
     }, { once: true });
@@ -353,11 +354,23 @@ function toggleSave(b) {
 }
 
 function hoursOrCallLine(b) {
-  if (b.has_hours) {
-    if (b.open_status === "open") return "⏰ Open now";
-    if (b.open_status === "closed") return "⏰ Closed now";
-    return "⏰ Hours available";
+  const trustedOpen = (b && b.__verified && b.__is_open_now === true && b.__is_closed !== true);
+  const trustedClosed = (b && b.__verified && (b.__is_closed === true || b.__is_open_now === false));
+
+  if (trustedOpen) return "⏰ Open now";
+  if (trustedClosed) return "⏰ Closed now";
+
+  if (!FLAGS.labelOpenNeedsVerification && typeof b.is_open_now === "boolean") {
+    return b.is_open_now ? "⏰ Open now" : "⏰ Closed now";
   }
+  if (!FLAGS.labelOpenNeedsVerification && typeof b.open_status === "string") {
+    return b.open_status === "open" ? "⏰ Open now" : (b.open_status === "closed" ? "⏰ Closed now" : "⏰ Hours available");
+  }
+
+  if (b.has_hours) return "⏰ Hours available";
+  if (b.phone) return `Hours not listed — tap to call 📞`;
+  return "Hours not listed";
+}
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
@@ -558,17 +571,28 @@ function localRerank(list){
 function generateWhyChips(b){
   if (!FLAGS.enableWhyChips) return [];
   const chips = [];
-  if (isActuallyOpen(b)) chips.push("Open now");
-  const m = milesFromMeters(b.distance);
-  if (m != null) { chips.push(m < 1 ? "Walkable" : `${m.toFixed(1)} mi`); }
+
+  const verifiedOpen = (b && b.__verified && b.__is_open_now === true && b.__is_closed !== true);
+  const verifiedClosed = (b && b.__verified && (b.__is_closed === true || b.__is_open_now === false));
+  if (verifiedOpen) chips.push("Open now");
+  else if (verifiedClosed) chips.push("Closed now");
+
+  const m = typeof b.distance === "number" ? (b.distance / 1609.34) : null;
+  if (m != null) chips.push(m < 1 ? "Walkable" : `${m.toFixed(1)} mi`);
   if ((b.rating||0) >= 4.5) chips.push("High rating");
-  const allowed = parsePriceSet(baseParams?.price);
-  if (allowed) {
-    const lvl = (b.price||"").length;
-    if (allowed.has(String(lvl||""))) chips.push("Fits your budget");
+
+  if (typeof baseParams !== "undefined") {
+    const allowed = (baseParams && baseParams.price) ? new Set(String(baseParams.price).split(",").map(s => s.trim())) : null;
+    if (allowed) {
+      const lvl = (b.price||"").length;
+      if (allowed.has(String(lvl||""))) chips.push("Fits your budget");
+    } else if (b.price) {
+      chips.push(b.price);
+    }
   } else if (b.price) {
     chips.push(b.price);
   }
+
   const keys = new Set([...(baseParams?.keywords||[]), ...(baseParams?.categories||[])]);
   const cats = (b.categories||[]).map(c => (typeof c==="string"?c:(c.alias||c.title||""))).join(" ").toLowerCase();
   for (const k of keys){
@@ -576,7 +600,7 @@ function generateWhyChips(b){
     if (!kk || kk.length < 3) continue;
     if (cats.includes(kk)) { chips.push(`Matches “${k}”`); break; }
   }
-  if (isIndependent(b)) chips.push("Local favorite");
+
   return chips.slice(0, 4);
 }
 
@@ -607,9 +631,17 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 function isActuallyOpen(b) {
-  if (typeof b.open_status === "string") return b.open_status === "open";
-  if (typeof b.is_open_now === "boolean") return b.is_open_now;
-  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
+  if (!b) return false;
+  if (b.__verified) {
+    if (b.__is_closed === true) return false;
+    if (typeof b.__is_open_now === "boolean") return b.__is_open_now;
+  }
+  try {
+    if (typeof openNow !== "undefined" && openNow === true) {
+      if (typeof b.is_open_now === "boolean") return b.is_open_now;
+      if (typeof b.open_status === "string") return b.open_status === "open";
+    }
+  } catch {}
   return false;
 }
 
@@ -888,30 +920,6 @@ document.getElementById("restart-btn")?.addEventListener("click", () => {
   showQuestion();
   updateQuestionProgress();
 });
-
-
-/* ==============================
-   QUIZ BOOTSTRAP SAFEGUARD
-   Ensures first question renders even if earlier inits didn't fire.
-============================== */
-(function bootstrapQuizOnce(){
-  try {
-    const titleEl = document.getElementById("question-title");
-    const ans = document.getElementById("answer-buttons");
-    const needs = !titleEl?.textContent?.trim() || !(ans?.children?.length > 0);
-    if (needs && typeof showQuestion === "function") {
-      showQuestion();
-      setTimeout(() => {
-        // One more nudge if still empty
-        const t2 = document.getElementById("question-title");
-        const a2 = document.getElementById("answer-buttons");
-        if ((!t2?.textContent?.trim() || !(a2?.children?.length > 0)) && typeof showQuestion === "function") {
-          showQuestion();
-        }
-      }, 120);
-    }
-  } catch {}
-})();
 
 /* ==============================
    INIT
