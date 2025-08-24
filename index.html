@@ -33,7 +33,10 @@
   <main id="quiz" class="w-full max-w-xl bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 space-y-4 fade-in" aria-label="Quiz">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl sm:text-3xl font-semibold text-slate-800">🍜 Miso AI</h1>
-      
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" id="group-mode" class="h-4 w-4" />
+        <span>Group mode</span>
+      </label>
     </div>
     <p class="text-center text-gray-700 text-base italic">"Tell me how you feel — I’ll tell you what to eat."</p>
 
@@ -83,6 +86,7 @@
       </div>
       <div class="flex gap-2">
         <button id="share-top-btn" class="chip" title="Copy your top picks to share">Share Top 3</button>
+        <button id="roll-again-btn" class="chip" title="Shuffle within your filters">Roll again</button>
         <button id="view-saved-btn" class="chip" title="View saved places">Saved ♥</button>
       </div>
     </div>
