@@ -405,12 +405,32 @@ function readFilters() {
   return filterState;
 }
 
+// Block lodging-type businesses from results
+function isHotelLike(b) {
+  const rawCats = Array.isArray(b.categories) ? b.categories : [];
+  const asText = rawCats
+    .map(c => (typeof c === 'string' ? c : (c.alias || c.title || '')))
+    .join(' , ')
+    .toLowerCase();
+  const name = (b.name || '').toLowerCase();
+
+  // Be careful not to match "Cinnabon" etc — use word boundaries
+  const banned = /\b(hotel|motels?|hostels?|lodging|resorts?|bed\s*&\s*breakfast|b&b|guest\s*house|inns?)\b/;
+  return banned.test(asText) || banned.test(name);
+}
+
+
 function applyClientFilters(items) {
   let list = [...items];
+
+  // NEW: drop hotels/inns/lodging
+  list = list.filter(b => !isHotelLike(b));
+
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
   return list;
 }
+
 
 async function callYelp(params) {
   const resp = await fetch('/.netlify/functions/yelp-search', {
@@ -437,7 +457,11 @@ function uniqById(items) {
 function buildQuerySet(baseParams) {
   const qs = [];
   const kw = (baseParams.keywords || []).slice(0, 6);
-  const cat = (baseParams.categories || []).slice(0, 5);
+  const cat = new Set((baseParams.categories || []).slice(0, 5));
+cat.add('restaurants'); // ensure we're only searching restaurant-like categories
+const catList = [...cat];
+if (catList.length) qs.push({ categories: catList.join(",") });
+
 
   // 1) primary combined keyword term
   if (kw.length) qs.push({ term: kw.slice(0, 3).join(" ") });
