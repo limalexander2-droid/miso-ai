@@ -1,30 +1,13 @@
 /* ==============================
-   FEATURE FLAGS
-============================== */
-const FLAGS = {
-  enableBackButton: true,
-  capTopResults: true,
-  tenCapCount: 10,
-  analytics: true,
-  relaxWhenEmpty: true,
-  cacheLastResults: true
-};
-
-/* ==============================
    SETTINGS
 ============================== */
-const ENABLE_ANIM = false;
-const LAST_PREFS_KEY = "miso_last_prefs_v1";
-const SAVED_KEY = "miso_saved_places_v1";
-const LAST_RESULTS_KEY = "miso_last_results_v1";
+const ENABLE_ANIM = false; // keep taps snappy
 
 /* ==============================
-   STATE + DOM
+   STATE + DOM REFERENCES
 ============================== */
 let currentQuestion = 0;
 let answers = [];
-let quizStarted = false;
-let firstSatisfyingFired = false;
 
 const container = document.getElementById("question-container");
 const answerButtons = document.getElementById("answer-buttons");
@@ -32,51 +15,86 @@ const resultContainer = document.getElementById("result");
 const loadingContainer = document.getElementById("loading");
 const quizContainer = document.getElementById("quiz");
 
-const backBtn = document.getElementById("back-btn");
-const skipBtn = document.getElementById("skip-btn");
-const fastPath = document.getElementById("fast-path");
-const useLastBtn = document.getElementById("use-last-btn");
-const groupModeChk = document.getElementById("group-mode");
-
 const loadingMessages = [
   { emoji: "🍣", text: "Plating your cravings…" },
   { emoji: "🍜", text: "Asking the kitchen for something special…" },
-  { emoji: "🥢", text: "Warming up the noodles…" }
+  { emoji: "🥢", text: "Warming up the noodles…" },
+  { emoji: "🍱", text: "Tossing ideas into the wok…" },
+  { emoji: "🌶️", text: "Sniffing out nearby bites…" },
+  { emoji: "🧠", text: "Thinking with my stomach…" },
+  { emoji: "🥡", text: "Grabbing extra napkins…" },
+  { emoji: "🧂", text: "Scouting the sauce section…" },
+  { emoji: "👨‍🍳", text: "Consulting my inner foodie…" }
 ];
 
 /* ==============================
-   ANALYTICS
+   QUESTION PROGRESS BAR
 ============================== */
-window.__misoEvents = window.__misoEvents || [];
-function track(event, payload = {}) {
-  if (!FLAGS.analytics) return;
-  try { window.__misoEvents.push({ event, t: Date.now(), ...payload }); } catch {}
+function updateQuestionProgress() {
+  const bar = document.getElementById("question-progress");
+  if (!bar) return;
+  const answered = currentQuestion;
+  const total = questions.length || 1;
+  const percent = Math.min(100, Math.round((answered / total) * 100));
+  bar.style.width = `${percent}%`;
+  bar.parentElement?.setAttribute("aria-valuenow", String(percent));
 }
 
 /* ==============================
-   QUESTIONS (≤7)
+   QUIZ QUESTIONS
 ============================== */
 const questions = [
-  { question: "What vibe tonight?", options: ["Cozy / comfort", "Healthy / light", "Indulgent", "Adventurous", "No strong preference"] },
-  { question: "Leaning toward…", options: ["Spicy", "Sweet", "Hot & hearty", "Fresh", "Surprise me"] },
-  { question: "Diet or goals?", options: ["Weight Loss", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "None"] },
-  { question: "Budget range?", options: ["Under $10", "$10–$20", "$20–$40", "Any budget"] },
-  { question: "How far will you go?", options: ["Walkable", "Short drive (<10m)", "15–30m", "Anywhere"] },
-  { question: "How are you eating today?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "Doesn’t matter"] },
-  { question: "Who’s eating?", options: ["Just me", "A few friends", "Date night", "Big group / family", "Doesn’t matter"] }
+  { question: "How hungry are you right now?", options: ["Just a little hungry", "Pretty hungry", "Starving", "Planning ahead"] },
+  { question: "How much time do you have to eat?", options: ["Less than 15 minutes", "About 30 minutes", "An hour or more", "No rush"] },
+  { question: "Who are you eating with?", options: ["Just me", "With a friend or partner", "Small group (3–4)", "Big group or family", "Doesn’t matter"] },
+  { question: "What’s your current mood?", options: ["Cozy / comfort food", "Energized / healthy", "Indulgent / treat yourself", "Adventurous", "Chill / no strong cravings"] },
+  { question: "Are you craving anything specific?", options: ["Spicy", "Sweet", "Hot and hearty", "Fresh and light", "No specific craving"] },
+  { question: "Any dietary goals or restrictions?", options: ["Weight loss / low-cal", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "No restrictions"] },
+  { question: "How much are you looking to spend?", options: ["Under $10", "$10–$20", "$20–$40", "Money’s not a concern"] },
+  { question: "How far are you willing to go?", options: ["Walking distance", "Short drive (under 10 mins)", "15–30 mins", "I'll go anywhere"] },
+  { question: "How would you like to eat today?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "Doesn’t matter"] },
+  { question: "Any special occasion or vibe?", options: ["Just a regular meal", "Quick lunch break", "Date night", "Post-workout", "Comfort after a long day", "Celebration"] }
 ];
 
 /* ==============================
-   EMOJI MAPPER + PROGRESS
+   MICRO-ANIMATIONS + TRANSITIONS
 ============================== */
+function attachButtonEffects(parentEl = document) {
+  if (!ENABLE_ANIM) return; // no-op for speed
+  parentEl.querySelectorAll('button').forEach(btn => {
+    btn.classList.add('tap-anim','ripple');
+    btn.addEventListener('click', e => {
+      const rect = btn.getBoundingClientRect();
+      btn.style.setProperty('--ripple-x', (e.clientX - rect.left) + 'px');
+      btn.style.setProperty('--ripple-y', (e.clientY - rect.top) + 'px');
+      btn.classList.add('rippling');
+      setTimeout(() => btn.classList.remove('rippling'), 250);
+    });
+  });
+}
+
+async function transitionQuestion(renderFn) {
+  if (!ENABLE_ANIM) { renderFn(); return; }
+  const q = document.getElementById('question-container');
+  const head = document.getElementById('question-header');
+  [q, head].forEach(node => node?.classList.remove('slide-in'));
+  [q, head].forEach(node => node?.classList.add('slide-out'));
+  await new Promise(r => setTimeout(r, 160)); // slightly faster
+  renderFn();
+  [q, head].forEach(node => node?.classList.remove('slide-out'));
+  [q, head].forEach(node => node?.classList.add('slide-in'));
+}
+
 const emojiMap = [
-  { match: /vibe|mood/i, emoji: '🥗' },
-  { match: /leaning|spicy|sweet|hearty|fresh/i, emoji: '🍔' },
-  { match: /diet|goals|keto|protein|gluten|vegan|vegetarian/i, emoji: '🥦' },
-  { match: /budget|range/i, emoji: '💸' },
-  { match: /far|drive|walk/i, emoji: '🗺️' },
-  { match: /eating|dine|delivery|takeout/i, emoji: '🍽️' },
-  { match: /who|friends|date|group/i, emoji: '👥' }
+  { match: /hungry|time|plan/i, emoji: '⏱️' },
+  { match: /who|with/i, emoji: '👥' },
+  { match: /mood|comfort|healthy/i, emoji: '🥗' },
+  { match: /craving|spicy|sweet/i, emoji: '🍔' },
+  { match: /diet|keto|protein|gluten/i, emoji: '🥦' },
+  { match: /spend|budget|price/i, emoji: '💸' },
+  { match: /distance|far|drive/i, emoji: '🗺️' },
+  { match: /eat today|dine|delivery|takeout/i, emoji: '🍽️' },
+  { match: /special|occasion|vibe|date/i, emoji: '✨' },
 ];
 function setQuestionEmoji(text) {
   const el = document.getElementById('question-emoji');
@@ -84,15 +102,6 @@ function setQuestionEmoji(text) {
   const hit = emojiMap.find(e => e.match.test(text));
   if (el) el.textContent = hit ? hit.emoji : '🍽️';
   if (title) title.textContent = text;
-}
-function updateQuestionProgress() {
-  const bar = document.getElementById("question-progress");
-  const total = questions.length || 1;
-  const percent = Math.min(100, Math.round((currentQuestion / total) * 100));
-  bar.style.width = `${percent}%`;
-  bar.parentElement?.setAttribute("aria-valuenow", String(percent));
-  const progressIndicator = document.getElementById("progress-indicator");
-  progressIndicator.textContent = `Question ${currentQuestion + 1} of ${total}`;
 }
 
 /* ==============================
@@ -102,36 +111,30 @@ function showQuestion() {
   resultContainer.classList.add("hidden");
   quizContainer.classList.remove("hidden");
 
-  if (!quizStarted) { quizStarted = true; track("quiz_start"); }
+  const progressIndicator = document.getElementById("progress-indicator");
+  if (progressIndicator) progressIndicator.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
 
   const q = questions[currentQuestion];
-  setQuestionEmoji(q.question);
-  container.innerHTML = "";
-  answerButtons.innerHTML = "";
+  const render = () => {
+    setQuestionEmoji(q.question);
+    container.innerHTML = "";
+    answerButtons.innerHTML = "";
+    q.options.forEach(option => {
+      const button = document.createElement("button");
+      button.innerText = option;
+      button.className = `
+        bg-white text-gray-700 text-base px-5 py-4 rounded-2xl shadow-sm border border-gray-200
+        hover:bg-gray-100 hover:text-slate-900 transition-all duration-150 ease-out
+        focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2
+      `;
+      // pointerup fires faster than click on mobile; once prevents double-activation
+      button.addEventListener("pointerup", () => selectAnswer(option), { once: true });
+      answerButtons.appendChild(button);
+    });
+    attachButtonEffects(answerButtons);
+  };
 
-  q.options.forEach(option => {
-    const button = document.createElement("button");
-    button.innerText = option;
-    button.className = `
-      bg-white text-gray-700 text-base px-5 py-4 rounded-2xl shadow-sm border border-gray-200
-      hover:bg-gray-100 hover:text-slate-900 transition-all duration-150 ease-out
-      focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2
-    `;
-    button.addEventListener("pointerup", () => selectAnswer(option), { once: true });
-    answerButtons.appendChild(button);
-  });
-
-  // Back button
-  if (FLAGS.enableBackButton) {
-    backBtn.style.display = "inline-flex";
-    backBtn.disabled = currentQuestion === 0;
-    backBtn.setAttribute("aria-disabled", currentQuestion === 0 ? "true" : "false");
-  } else {
-    backBtn.style.display = "none";
-  }
-
-  // Skip
-  skipBtn.disabled = currentQuestion >= questions.length;
+  transitionQuestion(render);
   updateQuestionProgress();
 }
 
@@ -143,74 +146,113 @@ function selectAnswer(answer) {
   if (currentQuestion < questions.length) {
     showQuestion();
   } else {
-    track("quiz_complete", { total_q: questions.length });
-    saveLastPrefs();
     showResults();
   }
 }
-function skipQuestion() {
-  answers.push({ question: questions[currentQuestion].question, answer: "Skip" });
-  currentQuestion += 1;
-  if (currentQuestion < questions.length) showQuestion();
-  else { track("quiz_complete", { total_q: questions.length, skipped: true }); saveLastPrefs(); showResults(); }
-}
-function goBackOne() {
-  if (!FLAGS.enableBackButton) return;
-  if (currentQuestion === 0) return;
-  currentQuestion -= 1;
-  answers.pop();
-  track("quiz_back", { to_q_index: currentQuestion });
-  showQuestion();
-}
-backBtn?.addEventListener("click", goBackOne);
-skipBtn?.addEventListener("click", skipQuestion);
 
 /* ==============================
-   LAST SETTINGS (fast path)
+   RESULTS + LOADING
 ============================== */
-function loadLastPrefs() {
-  try { return JSON.parse(localStorage.getItem(LAST_PREFS_KEY) || "null"); } catch { return null; }
-}
-function saveLastPrefs() {
-  const prefs = { answers, ts: Date.now(), group: !!groupModeChk?.checked };
-  try { localStorage.setItem(LAST_PREFS_KEY, JSON.stringify(prefs)); } catch {}
-}
-function maybeShowFastPath() {
-  const last = loadLastPrefs();
-  if (last && Array.isArray(last.answers) && last.answers.length) {
-    fastPath?.classList.remove("hidden");
-    useLastBtn?.addEventListener("click", () => {
-      answers = last.answers || [];
-      currentQuestion = questions.length;
-      groupModeChk.checked = !!last.group;
-      showResults();
-      track("used_last_settings");
-    }, { once: true });
+function showResults() {
+  const qBar = document.getElementById("question-progress");
+  if (qBar) { qBar.style.transition = "width 200ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
+
+  quizContainer.classList.add("hidden");
+  const sound = document.getElementById("miso-sound");
+  if (sound) sound.play().catch(() => {});
+  loadingContainer.classList.remove("hidden");
+
+  const progressBar = document.getElementById("progress-bar");
+  if (progressBar) {
+    progressBar.style.transition = "none"; progressBar.style.width = "0%"; void progressBar.offsetWidth;
+    progressBar.style.transition = "width 2.2s ease-in-out"; progressBar.style.width = "100%";
   }
+
+  const loadingText = loadingContainer.querySelector("p");
+  const loadingEmoji = document.getElementById("loading-emoji");
+  let messageIndex = 0;
+  function updateLoadingMessage() {
+    const { emoji, text } = loadingMessages[messageIndex];
+    if (loadingText) loadingText.textContent = text;
+    if (loadingEmoji) loadingEmoji.textContent = emoji;
+    messageIndex = (messageIndex + 1) % loadingMessages.length;
+  }
+  updateLoadingMessage();
+  window.messageInterval = setInterval(updateLoadingMessage, 800);
+
+  setTimeout(async () => {
+    if (window.messageInterval) { clearInterval(window.messageInterval); window.messageInterval = null; }
+    loadingContainer.classList.add("hidden");
+    resultContainer.classList.remove("hidden");
+    await initYelpResults();
+  }, 2200);
 }
 
 /* ==============================
-   ANSWERS -> SEARCH PARAMS
+   SMART TERM EXPANSION (keywords + Yelp categories)
 ============================== */
 function expandedSearchTerms(rawTerms) {
   const TERM_BANK = {
-    sweet: { keywords: ['dessert','ice cream','gelato','bakery','boba','milk tea'], categories: ['desserts','icecream','gelato','bakeries','bubbletea'] },
-    spicy: { keywords: ['spicy','sichuan','thai','indian','hot chicken'], categories: ['szechuan','thai','indpak'] },
-    hearty: { keywords: ['ramen','noodles','burgers','sandwiches'], categories: ['ramen','noodles','burgers'] },
-    fresh: { keywords: ['salad','poke','mediterranean','grill'], categories: ['salad','poke','mediterranean'] },
-    healthy: { keywords: ['healthy','bowl','grain bowl'], categories: ['salad','healthmarkets'] },
+    sweet: {
+      keywords: ['dessert','ice cream','frozen yogurt','gelato','bakery','boba','milk tea'],
+      categories: ['desserts','icecream','frozenyogurt','gelato','bakeries','bubbletea']
+    },
+    spicy: {
+      keywords: ['spicy','sichuan','thai','indian','hot chicken'],
+      categories: ['szechuan','thai','indpak']
+    },
+    noodles: {
+      keywords: ['ramen','pho','udon','noodles'],
+      categories: ['ramen','vietnamese','noodles']
+    },
+    healthy: {
+      keywords: ['healthy','salad','poke','mediterranean','grill'],
+      categories: ['salad','poke','mediterranean','healthmarkets']
+    },
+    breakfast: {
+      keywords: ['breakfast','brunch','coffee','bakery'],
+      categories: ['breakfast_brunch','cafes','coffee','bakeries']
+    },
+    bbq: {
+      keywords: ['bbq','barbecue','smokehouse','brisket'],
+      categories: ['bbq']
+    },
+    burgers: {
+      keywords: ['burger','smashburger'],
+      categories: ['burgers','tradamerican']
+    },
+    pizza: {
+      keywords: ['pizza','slice'],
+      categories: ['pizza']
+    },
+    tacos: {
+      keywords: ['taco','taqueria'],
+      categories: ['tacos','mexican']
+    },
+    seafood: {
+      keywords: ['seafood','oyster','sushi','poke'],
+      categories: ['seafood','sushi','poke']
+    },
+    comfort: {
+      keywords: ['comfort food','chicken and waffles','meatloaf','mac and cheese'],
+      categories: ['comfortfood','southern']
+    },
+    international: {
+      keywords: ['international','global'],
+      categories: ['thai','indpak','mexican','chinese','japanese','korean','mediterranean','italian','vietnamese']
+    },
     vegetarian: { keywords: ['vegetarian'], categories: ['vegetarian'] },
     vegan: { keywords: ['vegan'], categories: ['vegan'] },
     'gluten free': { keywords: ['gluten free'], categories: ['gluten_free'] },
     keto: { keywords: ['keto'], categories: [] },
-    protein: { keywords: ['high protein','grill'], categories: [] },
+    protein: { keywords: ['protein bowls','grill'], categories: [] },
   };
 
   const kws = new Set();
   const cats = new Set();
   rawTerms.forEach(t => {
     const key = String(t).toLowerCase().trim();
-    if (key) kws.add(key);
+    if (key) kws.add(key); // keep raw token
     Object.entries(TERM_BANK).forEach(([k, val]) => {
       if (key.includes(k)) {
         val.keywords.forEach(x => kws.add(x));
@@ -219,75 +261,70 @@ function expandedSearchTerms(rawTerms) {
     });
   });
 
-  return { keywords: [...kws].slice(0, 8), categories: [...cats].slice(0, 8) };
+  return {
+    keywords: [...kws].slice(0, 8),
+    categories: [...cats].slice(0, 8),
+  };
 }
 
+/* ==============================
+   MAP ANSWERS -> keywords + categories
+============================== */
 function mapAnswersToParams() {
   const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
-  const mood = find("What vibe");
-  const craving = find("Leaning toward");
-  const diet = find("Diet or goals");
-  const budget = find("Budget range");
-  const distance = find("How far");
-  const method = find("How are you eating");
-  const who = find("Who’s eating");
 
-  let tokens = [];
-  if (/healthy/i.test(mood)) tokens.push("healthy");
-  if (/comfort|hearty/i.test(craving)) tokens.push("hearty");
-  if (/Spicy/.test(craving)) tokens.push("spicy");
-  if (/Sweet/.test(craving)) tokens.push("sweet");
-  if (/Fresh/.test(craving)) tokens.push("fresh");
-  if (/Adventurous/i.test(mood)) tokens.push("international");
+  const craving = find("Are you craving anything specific?");
+  const mood = find("What’s your current mood?");
+  const diet = find("Any dietary goals or restrictions?");
+  const budget = find("How much are you looking to spend?");
+  const distance = find("How far are you willing to go?");
+  const method = find("How would you like to eat today?");
 
-  if (/Vegetarian/.test(diet)) tokens.push("vegetarian");
-  if (/Vegan/.test(diet)) tokens.push("vegan");
-  if (/Gluten-Free/.test(diet)) tokens.push("gluten free");
-  if (/Keto/.test(diet)) tokens.push("keto");
-  if (/High-Protein/.test(diet)) tokens.push("protein");
+  // topic tokens from answers
+  let baseTokens = [];
+  if (craving === "Spicy") baseTokens.push("spicy");
+  else if (craving === "Sweet") baseTokens.push("sweet");
+  else if (craving === "Hot and hearty") baseTokens.push("comfort");
+  else if (craving === "Fresh and light") baseTokens.push("healthy");
+  else baseTokens.push("restaurants"); // safe default
 
+  if (/healthy/i.test(mood)) baseTokens.push("healthy");
+  if (/Adventurous/i.test(mood)) baseTokens.push("international");
+  if (/Indulgent/i.test(mood)) baseTokens.push("sweet");
+
+  if (/Vegetarian/.test(diet)) baseTokens.push("vegetarian");
+  if (/Vegan/.test(diet)) baseTokens.push("vegan");
+  if (/Gluten-Free/.test(diet)) baseTokens.push("gluten free");
+  if (/Low-Carb|Keto/.test(diet)) baseTokens.push("keto");
+  if (/High-Protein/.test(diet)) baseTokens.push("protein");
+
+  // price
   let price = undefined;
   if (budget === "Under $10") price = "1";
   else if (budget === "$10–$20") price = "1,2";
   else if (budget === "$20–$40") price = "2,3";
-  else price = "1,2,3,4";
+  else if (budget === "Money’s not a concern") price = "1,2,3,4";
 
+  // radius
   let radius = 8000;
-  if (distance === "Walkable") radius = 800;
-  else if (distance.includes("<10")) radius = 3000;
+  if (distance === "Walking distance") radius = 800;
+  else if (distance.includes("under 10")) radius = 3000;
   else if (distance.includes("15–30")) radius = 8000;
-  else if (distance.includes("Anywhere")) radius = 16000;
+  else if (distance.includes("anywhere")) radius = 16000;
 
+  // transactions
   let transactions = [];
   if (method === "Delivery") transactions = ["delivery"];
   else if (method === "Takeout") transactions = ["pickup"];
 
-  const { keywords, categories } = expandedSearchTerms(tokens);
+  const { keywords, categories } = expandedSearchTerms(baseTokens);
 
-  const groupMode = !!groupModeChk?.checked || /group|big/i.test(who);
-  return { keywords, categories, price, radius, transactions, groupMode };
+  return { keywords, categories, price, radius, transactions };
 }
 
 /* ==============================
-   RESULTS RENDER + SAVES
+   RESULTS RENDERING
 ============================== */
-function getSaved() {
-  try { return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]"); } catch { return []; }
-}
-function setSaved(list) {
-  try { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); } catch {}
-}
-function isSaved(id) {
-  return getSaved().some(x => x.id === id);
-}
-function toggleSave(b) {
-  const list = getSaved();
-  const idx = list.findIndex(x => x.id === b.id);
-  if (idx >= 0) list.splice(idx, 1);
-  else list.push({ id: b.id, name: b.name, url: b.url || "", address: b.address || "", ts: Date.now() });
-  setSaved(list);
-}
-
 function hoursOrCallLine(b) {
   if (b.has_hours) {
     if (b.open_status === "open") return "⏰ Open now";
@@ -298,144 +335,63 @@ function hoursOrCallLine(b) {
   return "Hours not listed";
 }
 
-function googleMapsHref(b) {
-  try {
-    if (b.coordinates && typeof b.coordinates.latitude === "number" && typeof b.coordinates.longitude === "number") {
-      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.coordinates.latitude + "," + b.coordinates.longitude)}`;
-    }
-    const q = [b.name, b.address].filter(Boolean).join(" ");
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
-  } catch { return ""; }
+function toggleWidenFab(show) {
+  const fab = document.getElementById("try-radius-fab");
+  if (!fab) return;
+  fab.classList.toggle("hidden", !show);
 }
 
 function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
 
-  if (FLAGS.capTopResults) businesses = (businesses || []).slice(0, FLAGS.tenCapCount);
-
   if (!businesses.length) {
+    toggleWidenFab(true);
     list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm"><p class="text-gray-700 text-sm">No matching restaurants found. Try widening the distance or clearing price filters.</p></div>`;
     return;
   }
 
+  toggleWidenFab(false);
+
   businesses.forEach((b, i) => {
     const miles = typeof b.distance === "number" ? (b.distance / 1609.34).toFixed(1) : "";
-    const cats = Array.isArray(b.categories) ? b.categories.map(c => (typeof c === "string" ? c : (c.title || c.alias || ""))).filter(Boolean).join(", ") : "";
-    const saved = isSaved(b.id || "");
-
-    const card = document.createElement("div");
-    card.className = "relative p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex gap-4";
-    card.innerHTML = `
+    const a = document.createElement("a");
+    a.href = b.url || "#";
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.className = "relative p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex gap-4";
+    a.innerHTML = `
       ${i === 0 ? `<div class="top-pick-badge">Top Pick</div>` : ""}
       <img src="${b.image_url || ""}" alt="${b.name}" class="w-28 h-20 object-cover rounded-lg bg-gray-100" onerror="this.style.display='none'"/>
       <div class="flex-1">
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center justify-between">
           <h3 class="text-lg font-semibold text-gray-900">${b.name}</h3>
           ${b.price ? `<span class="text-sm text-gray-600">💲 ${b.price}</span>` : ""}
         </div>
         <div class="text-sm text-gray-700 mt-1">
           ${b.rating ? `⭐ ${b.rating} · ` : ""}${b.review_count ? `${b.review_count} reviews` : ""}
         </div>
-        <div class="text-xs text-gray-600 mt-1">${cats}</div>
-        <div class="text-xs text-gray-600 mt-1">📍 ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}</div>
-        <div class="flex flex-wrap gap-3 items-center text-xs text-gray-700 mt-2">
-          <span>${hoursOrCallLine(b)}</span>
+        <div class="text-xs text-gray-600 mt-1">
+          ${Array.isArray(b.categories) ? b.categories.join(", ") : ""}
         </div>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <a href="${googleMapsHref(b)}" target="_blank" rel="noopener noreferrer"
-            class="px-3 py-2 rounded-lg text-white text-sm font-semibold cta" aria-label="Open ${b.name} in Maps">Open in Maps</a>
-          ${b.url ? `<a href="${b.url}" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-lg border text-sm" aria-label="View ${b.name} on Yelp">Yelp</a>` : ""}
-          ${b.phone ? `<a href="tel:${(b.phone||'').replace(/[^\\d+]/g,'')}" class="px-3 py-2 rounded-lg border text-sm" aria-label="Call ${b.name}">Call</a>` : ""}
-          <button data-save="${b.id}" class="px-3 py-2 rounded-lg border text-sm ${saved ? 'bg-yellow-50 border-yellow-300' : ''}" aria-pressed="${saved ? 'true':'false'}">${saved ? 'Saved ♥' : 'Save ♥'}</button>
+        <div class="text-xs text-gray-600 mt-1">
+          📍 ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}
+        </div>
+        <div class="text-xs text-gray-700 mt-1">
+          ${hoursOrCallLine(b)} ${b.phone ? `• <a href="tel:${b.phone.replace(/[^\d+]/g,'')}" class="underline">Call</a>` : ""}
         </div>
       </div>
     `;
-
-    // Click tracking
-    card.querySelectorAll("a[href]").forEach(link => {
-      link.addEventListener("click", () => {
-        track("result_click", { biz_id: b.id || "", action: /google/.test(link.href) ? "maps" : ( /yelp/.test(link.href) ? "yelp" : "call" ), position: i+1 });
-        if (!firstSatisfyingFired) { firstSatisfyingFired = true; track("first_satisfying_choice", { biz_id: b.id || "", position: i+1 }); }
-      }, { passive: true });
-    });
-
-    // Save toggle
-    card.querySelector(`[data-save="${b.id}"]`)?.addEventListener("click", (ev) => {
-      toggleSave(b);
-      renderBusinesses(businesses); // re-render to reflect button state
-      track("result_save_toggle", { biz_id: b.id || "", saved: isSaved(b.id || "") });
-    });
-
-    list.appendChild(card);
-  });
-
-  track("results_render", { count: businesses.length });
-}
-
-/* ==============================
-   SAVED DIALOG
-============================== */
-const savedDialog = document.getElementById("saved-dialog");
-const savedList = document.getElementById("saved-list");
-const viewSavedBtn = document.getElementById("view-saved-btn");
-const closeSavedBtn = document.getElementById("close-saved");
-const clearSavedBtn = document.getElementById("clear-saved");
-
-viewSavedBtn?.addEventListener("click", () => { renderSaved(); savedDialog.showModal(); });
-closeSavedBtn?.addEventListener("click", () => savedDialog.close());
-clearSavedBtn?.addEventListener("click", () => { setSaved([]); renderSaved(); });
-
-function renderSaved() {
-  const list = getSaved();
-  savedList.innerHTML = "";
-  if (!list.length) {
-    savedList.innerHTML = `<div class="p-3 text-sm text-gray-600">No saved places yet.</div>`;
-    return;
-  }
-  list.sort((a,b) => b.ts - a.ts).forEach((s) => {
-    const row = document.createElement("div");
-    row.className = "p-3 border rounded-xl bg-white";
-    row.innerHTML = `
-      <div class="flex items-center justify-between">
-        <div class="font-medium">${s.name}</div>
-        <div class="text-xs text-gray-500">${new Date(s.ts).toLocaleString()}</div>
-      </div>
-      <div class="text-xs text-gray-600 mt-1">${s.address || ""}</div>
-      <div class="mt-2 flex gap-2">
-        ${s.url ? `<a href="${s.url}" target="_blank" class="chip">Yelp</a>` : ""}
-      </div>
-    `;
-    savedList.appendChild(row);
+    if (i === 0) a.classList.add("ring-2","ring-yellow-400");
+    list.appendChild(a);
   });
 }
 
 /* ==============================
-   SHARE TOP 3 (Group-friendly)
-============================== */
-const shareBtn = document.getElementById("share-top-btn");
-async function shareTop3() {
-  const top3 = (window.__lastBusinesses || []).slice(0, 3);
-  if (!top3.length) return;
-  const lines = top3.map((b,i) => `${i+1}. ${b.name} (${b.price || '—'} · ${b.rating || '—'}⭐) — ${b.address || ''}`);
-  const text = `My top picks from Miso:\n` + lines.join("\n");
-  try {
-    if (navigator.share && typeof navigator.share === "function") {
-      await navigator.share({ title: "Miso picks", text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      alert("Top picks copied to clipboard!");
-    }
-    track("share_top3");
-  } catch { /* user cancelled */ }
-}
-shareBtn?.addEventListener("click", shareTop3);
-
-/* ==============================
-   SEARCH + FILTERS
+   YELP INTEGRATION + CONTROLS
 ============================== */
 let currentSort = "best_match";
-let openNow = true;
+let openNow = false;         // default off for better hit rate; user can toggle on
 let currentRadius = 8000;
 let lastGeo = null;
 let lastLocation = null;
@@ -446,30 +402,13 @@ function readFilters() {
   filterState.highRated = !!document.getElementById("filter-highrated")?.checked;
   filterState.budget = !!document.getElementById("filter-budget")?.checked;
   filterState.nearby = !!document.getElementById("filter-nearby")?.checked;
-  openNow = !!document.getElementById("open-now")?.checked;
   return filterState;
 }
 
-function isHotelLike(b) {
-  const rawCats = Array.isArray(b.categories) ? b.categories : [];
-  const asText = rawCats.map(c => (typeof c === 'string' ? c : (c.alias || c.title || ''))).join(' , ').toLowerCase();
-  const name = (b.name || '').toLowerCase();
-  const banned = /\b(hotel|motels?|hostels?|lodging|resorts?|bed\s*&\s*breakfast|b&b|guest\s*house|inns?)\b/;
-  return banned.test(asText) || banned.test(name);
-}
-function isActuallyOpen(b) {
-  if (typeof b.open_status === "string") return b.open_status === "open";
-  if (typeof b.is_open_now === "boolean") return b.is_open_now;
-  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
-  return false;
-}
-
 function applyClientFilters(items) {
-  let list = [...items].filter(b => !isHotelLike(b));
-  if (openNow) list = list.filter(isActuallyOpen);
+  let list = [...items];
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
-  if (FLAGS.capTopResults) list = list.slice(0, FLAGS.tenCapCount);
   return list;
 }
 
@@ -487,23 +426,39 @@ async function callYelp(params) {
   return data.businesses || [];
 }
 
+/* ===== Multi-query helpers: build small valid queries and merge results ===== */
 function uniqById(items) {
   const map = new Map();
   items.forEach(b => { if (b && b.id && !map.has(b.id)) map.set(b.id, b); });
   return [...map.values()];
 }
+
+// Build a few valid query variants (term OR categories per request)
 function buildQuerySet(baseParams) {
   const qs = [];
   const kw = (baseParams.keywords || []).slice(0, 6);
-  const catSet = new Set((baseParams.categories || []).slice(0, 5));
-  catSet.add('restaurants');
-  const catList = [...catSet];
-  if (catList.length) qs.push({ categories: catList.join(",") });
+  const cat = (baseParams.categories || []).slice(0, 5);
+
+  // 1) primary combined keyword term
   if (kw.length) qs.push({ term: kw.slice(0, 3).join(" ") });
+
+  // 2) single-strong keywords
   kw.slice(0, 4).forEach(w => qs.push({ term: w }));
+
+  // 3) categories (comma-separated)
+  if (cat.length) qs.push({ categories: cat.join(",") });
+
+  // 4) generic fallback
   qs.push({ term: "restaurants" });
+
+  // de-dup
   const seen = new Set();
-  return qs.filter(q => { const k = q.term ? `t:${q.term}` : `c:${q.categories}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  return qs.filter(q => {
+    const k = q.term ? `t:${q.term}` : `c:${q.categories}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 async function mergedSearch(base, querySet, targetCount = 20) {
@@ -515,9 +470,10 @@ async function mergedSearch(base, querySet, targetCount = 20) {
       if (all.length >= targetCount) break;
     }
   }
-  if (!all.length && FLAGS.relaxWhenEmpty) {
+  // If still empty, relax once (open_now off + wider radius + broader terms)
+  if (!all.length) {
     const relaxed = { ...base, open_now: false, radius: Math.min(32000, (base.radius || 8000) * 2) };
-    const relaxedSet = [...querySet, { term: "food" }, { term: "dinner" }, { term: "lunch" }, { term: "dessert" }];
+    const relaxedSet = [...querySet, { term: "food" }, { term: "dinner" }, { term: "lunch" }, { term: "dessert" }, { term: "ice cream" }];
     for (const q of relaxedSet) {
       const results = await callYelp({ ...relaxed, ...q });
       if (results?.length) {
@@ -529,12 +485,12 @@ async function mergedSearch(base, querySet, targetCount = 20) {
   return all;
 }
 
+/* Main search that uses the multi-query strategy */
 async function doSearch(overrides = {}) {
   readFilters();
-  const groupMode = !!groupModeChk?.checked;
-  const sort_for_group = groupMode ? "rating" : (filterState.nearby ? "distance" : currentSort);
+
   const base = {
-    sort_by: sort_for_group,
+    sort_by: filterState.nearby ? "distance" : currentSort,
     open_now: openNow,
     radius: currentRadius,
     limit: 20,
@@ -543,39 +499,27 @@ async function doSearch(overrides = {}) {
     ...overrides
   };
 
-  if (lastGeo) { base.latitude = lastGeo.latitude; base.longitude = lastGeo.longitude; }
-  else if (lastLocation) { base.location = lastLocation; }
+  if (lastGeo) {
+    base.latitude = lastGeo.latitude;
+    base.longitude = lastGeo.longitude;
+    delete base.location;
+  } else if (lastLocation) {
+    base.location = lastLocation;
+    delete base.latitude; delete base.longitude;
+  }
+
+  const querySet = buildQuerySet(baseParams || { keywords: ['restaurants'], categories: [] });
 
   showSkeletons();
   try {
-    const querySet = buildQuerySet(baseParams || { keywords: ['restaurants'], categories: [] });
     const results = await mergedSearch(base, querySet, 20);
-    let filtered = applyClientFilters(results);
-
-    // Cache last results for offline-friendly fallback
-    if (FLAGS.cacheLastResults) {
-      try { localStorage.setItem(LAST_RESULTS_KEY, JSON.stringify({ ts: Date.now(), results: results })); } catch {}
-    }
-
-    // Keep in memory for Share Top 3
-    window.__lastBusinesses = filtered;
-
+    const filtered = applyClientFilters(results);
     renderBusinesses(filtered);
-    track("results_shown", { count: filtered.length });
+    toggleWidenFab(!filtered.length);
   } catch (e) {
-    // Offline-friendly fallback
-    const cached = (() => { try { return JSON.parse(localStorage.getItem(LAST_RESULTS_KEY) || "null"); } catch { return null; } })();
     const list = document.getElementById("results-list");
-    if (cached?.results?.length) {
-      const note = `<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 mb-2">Network issue. Showing last saved results from this device.</div>`;
-      list.innerHTML = note;
-      window.__lastBusinesses = cached.results;
-      renderBusinesses(applyClientFilters(cached.results));
-    } else {
-      list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message} <button id="retry-btn" class="ml-2 underline">Retry</button></div>`;
-      document.getElementById("retry-btn")?.addEventListener("click", () => doSearch(overrides));
-    }
-    track("results_error", { message: String(e && e.message || e) });
+    list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message}</div>`;
+    toggleWidenFab(true);
   }
 }
 
@@ -597,14 +541,16 @@ function showSkeletons() {
 }
 
 /* ==============================
-   RESULTS INIT
+   INIT RESULTS (controls + location + first fetch)
 ============================== */
-async function initYelpResults(t0 = performance.now()) {
+async function initYelpResults() {
+  // Controls
   const bestBtn = document.getElementById("sort-best");
   const ratingBtn = document.getElementById("sort-rating");
   const distanceBtn = document.getElementById("sort-distance");
   const openChk = document.getElementById("open-now");
   const widenBtn = document.getElementById("btn-widen");
+  const widenFab = document.getElementById("try-radius-fab");
   const hiChk = document.getElementById("filter-highrated");
   const budChk = document.getElementById("filter-budget");
   const nearChk = document.getElementById("filter-nearby");
@@ -621,18 +567,17 @@ async function initYelpResults(t0 = performance.now()) {
   bestBtn?.addEventListener("click", () => { currentSort = "best_match"; setActive(bestBtn); doSearch(); });
   ratingBtn?.addEventListener("click", () => { currentSort = "rating"; setActive(ratingBtn); doSearch(); });
   distanceBtn?.addEventListener("click", () => { currentSort = "distance"; setActive(distanceBtn); doSearch(); });
-
-  openNow = !!openChk?.checked;
   openChk?.addEventListener("change", () => { openNow = !!openChk.checked; doSearch(); });
-
   widenBtn?.addEventListener("click", () => { currentRadius = Math.min(32000, Math.round(currentRadius * 1.5)); doSearch(); });
+  widenFab?.addEventListener("click", () => { currentRadius = Math.min(32000, Math.round(currentRadius * 1.5)); doSearch(); });
   hiChk?.addEventListener("change", () => doSearch());
   budChk?.addEventListener("change", () => doSearch());
   nearChk?.addEventListener("change", () => doSearch());
 
+  // Base params from answers
   baseParams = mapAnswersToParams();
 
-  // Try geolocation; fallback to manual
+  // Try geolocation first
   const geo = await new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
@@ -645,96 +590,71 @@ async function initYelpResults(t0 = performance.now()) {
   if (geo) {
     lastGeo = geo;
     await doSearch();
-  } else {
-    const locBox = document.getElementById("location-fallback");
-    locBox?.classList.remove("hidden");
-    const manualInput = locBox.querySelector("#manual-location");
-    const useBtn = locBox.querySelector("#use-location-btn");
-    const triggerSearch = async () => {
-      const value = (manualInput?.value || "").trim();
-      if (!value) return;
-      lastLocation = value;
-      lastGeo = null;
-      await doSearch();
-    };
-    useBtn?.addEventListener("click", triggerSearch);
-    manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
+    return;
   }
 
-  const t1 = performance.now();
-  track("results_latency_ms", { ms: Math.max(0, Math.round(t1 - t0)) });
-}
+  // Manual fallback UI
+  const locBox = document.getElementById("location-fallback");
+  locBox?.classList.remove("hidden");
 
-/* ==============================
-   LOADING + SHOW RESULTS
-============================== */
-function showResults() {
-  const qBar = document.getElementById("question-progress");
-  if (qBar) { qBar.style.transition = "width 200ms ease-out"; qBar.style.width = "100%"; qBar.parentElement?.setAttribute("aria-valuenow", "100"); }
-  quizContainer.classList.add("hidden");
+  const manualInput = locBox ? locBox.querySelector("#manual-location") : null;
+  const useBtn = locBox ? locBox.querySelector("#use-location-btn") : null;
 
-  const sound = document.getElementById("miso-sound");
-  sound?.play().catch(() => {});
+  const triggerSearch = async () => {
+    const value = (manualInput?.value || "").trim();
+    if (!value) return;
+    lastLocation = value;
+    lastGeo = null;
+    await doSearch();
+  };
 
-  loadingContainer.classList.remove("hidden");
-  const progressBar = document.getElementById("progress-bar");
-  if (progressBar) {
-    progressBar.style.transition = "none"; progressBar.style.width = "0%"; void progressBar.offsetWidth;
-    progressBar.style.transition = "width 2.2s ease-in-out"; progressBar.style.width = "100%";
-  }
-  const loadingText = loadingContainer.querySelector("p");
-  const loadingEmoji = document.getElementById("loading-emoji");
-  let i = 0;
-  function stepMsg(){ const {emoji,text}=loadingMessages[i]; if (loadingText) loadingText.textContent=text; if (loadingEmoji) loadingEmoji.textContent=emoji; i=(i+1)%loadingMessages.length; }
-  stepMsg();
-  const intId = setInterval(stepMsg, 900);
-
-  setTimeout(async () => {
-    clearInterval(intId);
-    loadingContainer.classList.add("hidden");
-    resultContainer.classList.remove("hidden");
-    await initYelpResults(performance.now());
-  }, 2200);
+  useBtn?.addEventListener("click", triggerSearch);
+  manualInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") triggerSearch(); });
 }
 
 /* ==============================
    RESTART
 ============================== */
-document.getElementById("restart-btn")?.addEventListener("click", () => {
-  window.scrollTo({ top: 0, behavior: "smooth" });
-  currentQuestion = 0;
-  answers = [];
-  quizStarted = false;
-  firstSatisfyingFired = false;
+const restartBtn = document.getElementById("restart-btn");
+if (restartBtn) {
+  restartBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    currentQuestion = 0;
+    answers = [];
 
-  document.getElementById("question-progress")?.parentElement?.setAttribute("aria-valuenow", "0");
-  document.getElementById("progress-bar")?.parentElement?.setAttribute("aria-valuenow", "0");
+    document.getElementById("question-progress")?.parentElement?.setAttribute("aria-valuenow", "0");
+    document.getElementById("progress-bar")?.parentElement?.setAttribute("aria-valuenow", "0");
 
-  const qBar = document.getElementById("question-progress");
-  if (qBar) { qBar.style.transition = "none"; qBar.style.width = "0%"; void qBar.offsetWidth; qBar.style.transition = ""; }
-  const lb = document.getElementById("progress-bar");
-  if (lb) { lb.style.transition = "none"; lb.style.width = "0%"; void lb.offsetWidth; }
+    const qBar = document.getElementById("question-progress");
+    if (qBar) { qBar.style.transition = "none"; qBar.style.width = "0%"; void qBar.offsetWidth; qBar.style.transition = ""; }
 
-  resultContainer.classList.add("hidden");
-  loadingContainer.classList.add("hidden");
-  quizContainer.classList.remove("hidden");
+    const lb = document.getElementById("progress-bar");
+    if (lb) { lb.style.transition = "none"; lb.style.width = "0%"; void lb.offsetWidth; }
 
-  currentSort = "best_match";
-  openNow = true;
-  document.getElementById("open-now").checked = true;
-  currentRadius = 8000;
-  lastGeo = null;
-  lastLocation = null;
-  baseParams = null;
-  filterState = { highRated: false, budget: false, nearby: false };
+    resultContainer.classList.add("hidden");
+    loadingContainer.classList.add("hidden");
+    quizContainer.classList.remove("hidden");
 
-  showQuestion();
-  updateQuestionProgress();
-});
+    // Reset Yelp state
+    currentSort = "best_match";
+    openNow = false;
+    currentRadius = 8000;
+    lastGeo = null;
+    lastLocation = null;
+    baseParams = null;
+    filterState = { highRated: false, budget: false, nearby: false };
+
+    showQuestion();
+    updateQuestionProgress();
+
+    const progressIndicator = document.getElementById("progress-indicator");
+    if (progressIndicator) progressIndicator.textContent = `Question 1 of ${questions.length}`;
+  });
+}
 
 /* ==============================
    INIT
 ============================== */
-maybeShowFastPath();
 showQuestion();
 updateQuestionProgress();
+attachButtonEffects();
