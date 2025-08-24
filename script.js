@@ -345,6 +345,9 @@ function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
 
+  // ✅ cap to 10 results without changing anything else
+  businesses = (businesses || []).slice(0, 10);
+
   if (!businesses.length) {
     toggleWidenFab(true);
     list.innerHTML = `<div class="p-4 border border-gray-200 rounded-xl bg-white shadow-sm"><p class="text-gray-700 text-sm">No matching restaurants found. Try widening the distance or clearing price filters.</p></div>`;
