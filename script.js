@@ -422,15 +422,28 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 
+// True only if the business is currently open
+function isActuallyOpen(b) {
+  if (typeof b.open_status === "string") return b.open_status === "open"; // normalized by backend
+  if (typeof b.is_open_now === "boolean") return b.is_open_now;          // fallback if provided
+  // If we don't know the hours, treat as closed when "Open now" is on
+  return false;
+}
 
 function applyClientFilters(items) {
   let list = [...items];
 
-  // NEW: drop hotels/inns/lodging
+  // keep your hotel/inn filter
   list = list.filter(b => !isHotelLike(b));
+
+  // ✅ Enforce the "Open now" toggle strictly
+  if (openNow) {
+    list = list.filter(isActuallyOpen);
+  }
 
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
+
   return list;
 }
 
@@ -576,6 +589,7 @@ async function initYelpResults() {
   const ratingBtn = document.getElementById("sort-rating");
   const distanceBtn = document.getElementById("sort-distance");
   const openChk = document.getElementById("open-now");
+  openNow = !!openChk?.checked;
   const widenBtn = document.getElementById("btn-widen");
   const widenFab = document.getElementById("try-radius-fab");
   const hiChk = document.getElementById("filter-highrated");
