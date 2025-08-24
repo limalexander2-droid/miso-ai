@@ -9,9 +9,9 @@ const FLAGS = {
   relaxWhenEmpty: true,
   cacheLastResults: true
 , 
-  enableReranker: true, 
-  enableWhyChips: true, 
-  enableRollAgain: true, 
+  enableHoursVerification: true, 
+  hideClosedAlways: true, 
+  labelOpenNeedsVerification: true, 
   enableFastPath: false};
 
 /* ==============================
@@ -55,64 +55,6 @@ window.__misoEvents = window.__misoEvents || [];
 function track(event, payload = {}) {
   if (!FLAGS.analytics) return;
   try { window.__misoEvents.push({ event, t: Date.now(), ...payload }); } catch {}
-}
-
-
-/* ==============================
-   QUALITY HELPERS (allowlist, dedupe, indie check, price map)
-============================== */
-const ALLOWED = new Set([
-  "restaurants","food","breakfast_brunch","cafes","coffee","bubbletea","juicebars",
-  "ramen","noodles","japanese","korean","thai","vietnamese","chinese","szechuan","dimsum","hotpot",
-  "indpak","mediterranean","greek","middleeastern","turkish","lebanese","italian","pizza","pasta",
-  "mexican","tacos","tex-mex","bbq","seafood","poke","salad","sandwiches","burgers","newamerican",
-  "vegan","vegetarian","gluten_free","healthmarkets","soulfood","southern","cajun","latin","peruvian",
-  "bakeries","desserts","icecream","gelato","cupcakes","donuts"
-]);
-
-function isFoodBusiness(b){
-  const cats = Array.isArray(b.categories) ? b.categories : [];
-  if (!cats.length) return true; // be lenient if Yelp omits
-  return cats.some(c => {
-    const alias = typeof c === "string" ? c.toLowerCase() : (c.alias || c.title || "").toLowerCase();
-    return ALLOWED.has(alias) || /restaurant|food|coffee|cafe|tea|juice|bakery|dessert|ice\s*cream/.test(alias);
-  });
-}
-
-function uniqueKey(b){
-  const name = (b.name || "").toLowerCase().trim();
-  const lat = Math.round(((b.coordinates?.latitude)||0) * 300); // ~300m buckets
-  const lon = Math.round(((b.coordinates?.longitude)||0) * 300);
-  return `${name}|${lat}|${lon}`;
-}
-function dedupeByGeoName(items){
-  const m = new Map();
-  for (const b of items){
-    const k = uniqueKey(b);
-    if (!m.has(k)) m.set(k, b);
-  }
-  return [...m.values()];
-}
-
-const CHAIN_HINTS = [
-  "mcdonald","starbucks","chipotle","taco bell","burger king","wendy","subway","panera",
-  "domino","little caesars","papa john","panda express","popeyes","kfc","wingstop",
-  "olive garden","red lobster","outback","ihop","denny","jack in the box","whataburger",
-  "culver","raising cane","jimmy john","jersey mike","in-n-out","five guys","chick-fil-a"
-];
-function isIndependent(b){
-  const n = (b.name || "").toLowerCase();
-  return !CHAIN_HINTS.some(h => n.includes(h));
-}
-
-function priceToLevel(str){
-  if (!str) return null;
-  return String(str).trim().replace(/[^$]/g,"").length || null;
-}
-
-function milesFromMeters(m){
-  if (typeof m !== "number") return null;
-  return m / 1609.34;
 }
 
 /* ==============================
@@ -246,7 +188,7 @@ function maybeShowFastPath() {
     useLastBtn?.addEventListener("click", () => {
       answers = last.answers || [];
       currentQuestion = questions.length;
-      groupModeChk.checked = !!last.group;
+      if (groupModeChk) { groupModeChk.checked = !!last.group; }
       showResults();
       track("used_last_settings");
     }, { once: true });
@@ -353,11 +295,14 @@ function toggleSave(b) {
 }
 
 function hoursOrCallLine(b) {
-  if (b.has_hours) {
-    if (b.open_status === "open") return "⏰ Open now";
-    if (b.open_status === "closed") return "⏰ Closed now";
-    return "⏰ Hours available";
-  }
+  const trustedOpen = (b && b.__verified && b.__is_open_now === true && b.__is_closed !== true);
+  const trustedClosed = (b && b.__verified && (b.__is_closed === true || b.__is_open_now === false));
+  if (trustedOpen) return "⏰ Open now";
+  if (trustedClosed) return "⏰ Closed now";
+  if (b.has_hours) return "⏰ Hours available";
+  if (b.phone) return `Hours not listed — tap to call 📞`;
+  return "Hours not listed";
+}
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
@@ -388,10 +333,7 @@ function renderBusinesses(businesses = []) {
     const cats = Array.isArray(b.categories) ? b.categories.map(c => (typeof c === "string" ? c : (c.title || c.alias || ""))).filter(Boolean).join(", ") : "";
     const saved = isSaved(b.id || "");
 
-// Why chips
-const why = generateWhyChips(b);
-
-const card = document.createElement("div");
+    const card = document.createElement("div");
     card.className = "relative p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex gap-4";
     card.innerHTML = `
       ${i === 0 ? `<div class="top-pick-badge">Top Pick</div>` : ""}
@@ -406,9 +348,8 @@ const card = document.createElement("div");
         </div>
         <div class="text-xs text-gray-600 mt-1">${cats}</div>
         <div class="text-xs text-gray-600 mt-1">📍 ${b.address || ""} ${miles ? ` · ${miles} mi` : ""}</div>
-        <div class="flex flex-wrap gap-2 items-center text-xs text-gray-700 mt-2">
-          <span class="chip">${hoursOrCallLine(b)}</span>
-          ${why.map(x => `<span class="chip">${x}</span>`).join("")}
+        <div class="flex flex-wrap gap-3 items-center text-xs text-gray-700 mt-2">
+          <span>${hoursOrCallLine(b)}</span>
         </div>
         <div class="mt-3 flex flex-wrap gap-2">
           <a href="${googleMapsHref(b)}" target="_blank" rel="noopener noreferrer"
@@ -499,87 +440,6 @@ async function shareTop3() {
 }
 shareBtn?.addEventListener("click", shareTop3);
 
-
-/* ==============================
-   RERANKER + WHY CHIPS
-============================== */
-function norm(v, lo, hi){
-  if (v == null) return 0;
-  if (hi <= lo) return 0;
-  const x = (v - lo) / (hi - lo);
-  return Math.max(0, Math.min(1, x));
-}
-function logNorm(v){
-  if (v == null) return 0;
-  return Math.log1p(Math.max(0, v)) / Math.log(1000); // ~0..1 at 1000 reviews
-}
-function parsePriceSet(priceStr){
-  if (!priceStr) return null;
-  const set = new Set(String(priceStr).split(",").map(s => s.trim()).filter(Boolean));
-  return set;
-}
-function priceFitScore(b, allowed){
-  if (!allowed) return 0.5; // neutral
-  const lvl = (b.price||"").length;
-  return allowed.has(String(lvl||"")) ? 1 : 0;
-}
-function matchCuisineScore(b, base){
-  const cats = (b.categories||[]).map(c => (typeof c==="string" ? c : (c.alias||c.title||""))).join(" ").toLowerCase();
-  const keys = new Set([...(base?.keywords||[]), ...(base?.categories||[])].map(x => String(x).toLowerCase()));
-  let hits = 0, total = 0;
-  keys.forEach(k => { total += 1; if (k && cats.includes(k)) hits += 1; });
-  if (!total) return 0.3; // small neutral bump
-  return Math.min(1, hits / Math.max(1, total/2)); // partial credit
-}
-function computeScore(b){
-  const distMiles = milesFromMeters(b.distance);
-  const priceAllowed = parsePriceSet(baseParams?.price);
-  const s =
-    0.38 * norm(b.rating || 0, 3.5, 5) +
-    0.17 * logNorm(b.review_count || 0) +
-    0.12 * matchCuisineScore(b, baseParams) +
-    0.10 * priceFitScore(b, priceAllowed) +
-    0.08 * (isIndependent(b) ? 1 : 0) +
-    0.07 * (isActuallyOpen(b) ? 1 : 0) -
-    0.15 * norm(distMiles || 8, 0, 8);
-  return s;
-}
-function localRerank(list){
-  if (!FLAGS.enableReranker) return list;
-  const arr = [...list];
-  if (currentSort === "rating"){
-    return arr.sort((a,b) => (b.rating||0) - (a.rating||0));
-  } else if (currentSort === "distance"){
-    return arr.sort((a,b) => (a.distance||Infinity) - (b.distance||Infinity));
-  } else {
-    return arr.sort((a,b) => computeScore(b) - computeScore(a));
-  }
-}
-function generateWhyChips(b){
-  if (!FLAGS.enableWhyChips) return [];
-  const chips = [];
-  if (isActuallyOpen(b)) chips.push("Open now");
-  const m = milesFromMeters(b.distance);
-  if (m != null) { chips.push(m < 1 ? "Walkable" : `${m.toFixed(1)} mi`); }
-  if ((b.rating||0) >= 4.5) chips.push("High rating");
-  const allowed = parsePriceSet(baseParams?.price);
-  if (allowed) {
-    const lvl = (b.price||"").length;
-    if (allowed.has(String(lvl||""))) chips.push("Fits your budget");
-  } else if (b.price) {
-    chips.push(b.price);
-  }
-  const keys = new Set([...(baseParams?.keywords||[]), ...(baseParams?.categories||[])]);
-  const cats = (b.categories||[]).map(c => (typeof c==="string"?c:(c.alias||c.title||""))).join(" ").toLowerCase();
-  for (const k of keys){
-    const kk = String(k).toLowerCase();
-    if (!kk || kk.length < 3) continue;
-    if (cats.includes(kk)) { chips.push(`Matches “${k}”`); break; }
-  }
-  if (isIndependent(b)) chips.push("Local favorite");
-  return chips.slice(0, 4);
-}
-
 /* ==============================
    SEARCH + FILTERS
 ============================== */
@@ -607,54 +467,137 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 function isActuallyOpen(b) {
-  if (typeof b.open_status === "string") return b.open_status === "open";
-  if (typeof b.is_open_now === "boolean") return b.is_open_now;
-  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
+  if (!b) return false;
+  if (b.__verified) {
+    if (b.__is_closed === true) return false;
+    if (typeof b.__is_open_now === "boolean") return b.__is_open_now;
+  }
+  try {
+    if (typeof openNow !== "undefined" && openNow === true) {
+      if (typeof b.is_open_now === "boolean") return b.is_open_now;
+      if (typeof b.open_status === "string") return b.open_status === "open";
+    }
+  } catch {}
   return false;
 }
 
 function applyClientFilters(items) {
-  // Base filters
-  let list = [...items].filter(b => !isHotelLike(b)).filter(isFoodBusiness);
+  let list = [...items].filter(b => !isHotelLike(b));
   if (openNow) list = list.filter(isActuallyOpen);
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
   if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
-
-  // Dedupe by name+geo
-  list = dedupeByGeoName(list);
-
-  if (FLAGS.capTopResults) list = list.slice(0, FLAGS.tenCapCount * 3); // keep more pre-rank
+  if (FLAGS.capTopResults) list = list.slice(0, FLAGS.tenCapCount);
   return list;
 }
 
 async function callYelp(params) {
-  const attempt = async (signal) => {
-    const resp = await fetch('/.netlify/functions/yelp-search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal
-    });
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => "");
-      throw new Error(`Search failed (${resp.status}): ${txt}`);
+  const resp = await fetch('/.netlify/functions/yelp-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    throw new Error(`Search failed (${resp.status}): ${txt}`);
+  }
+  const data = await resp.json();
+  return data.businesses || [];
+}
+
+function uniqById(items) {
+  const map = new Map();
+  items.forEach(b => { if (b && b.id && !map.has(b.id)) map.set(b.id, b); });
+  return [...map.values()];
+}
+function buildQuerySet(baseParams) {
+  const qs = [];
+  const kw = (baseParams.keywords || []).slice(0, 6);
+  const catSet = new Set((baseParams.categories || []).slice(0, 5));
+  catSet.add('restaurants');
+  const catList = [...catSet];
+  if (catList.length) qs.push({ categories: catList.join(",") });
+  if (kw.length) qs.push({ term: kw.slice(0, 3).join(" ") });
+  kw.slice(0, 4).forEach(w => qs.push({ term: w }));
+  qs.push({ term: "restaurants" });
+  const seen = new Set();
+  return qs.filter(q => { const k = q.term ? `t:${q.term}` : `c:${q.categories}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+async function mergedSearch(base, querySet, targetCount = 20) {
+  let all = [];
+  for (const q of querySet) {
+    const results = await callYelp({ ...base, ...q });
+    if (results?.length) {
+      all = uniqById(all.concat(results));
+      if (all.length >= targetCount) break;
     }
-    const data = await resp.json();
-    return data.businesses || [];
+  }
+  if (!all.length && FLAGS.relaxWhenEmpty) {
+    const relaxed = { ...base, open_now: false, radius: Math.min(32000, (base.radius || 8000) * 2) };
+    const relaxedSet = [...querySet, { term: "food" }, { term: "dinner" }, { term: "lunch" }, { term: "dessert" }];
+    for (const q of relaxedSet) {
+      const results = await callYelp({ ...relaxed, ...q });
+      if (results?.length) {
+        all = uniqById(all.concat(results));
+        if (all.length >= targetCount) break;
+      }
+    }
+  }
+  return all;
+}
+
+async function doSearch(overrides = {}) {
+  readFilters();
+  const groupMode = !!groupModeChk?.checked;
+  const sort_for_group = groupMode ? "rating" : (filterState.nearby ? "distance" : currentSort);
+  const base = {
+    sort_by: sort_for_group,
+    open_now: openNow,
+    radius: currentRadius,
+    limit: 20,
+    price: baseParams?.price,
+    transactions: baseParams?.transactions,
+    ...overrides
   };
 
-  const maxTries = 2;
-  for (let i = 0; i < maxTries; i++) {
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(), 6000 + i*1000);
-    try {
-      return await attempt(ctrl.signal);
-    } catch (e) {
-      if (i === maxTries - 1) throw e;
-      await new Promise(r => setTimeout(r, 300 * (i+1)));
-    } finally {
-      clearTimeout(id);
+  if (lastGeo) { base.latitude = lastGeo.latitude; base.longitude = lastGeo.longitude; }
+  else if (lastLocation) { base.location = lastLocation; }
+
+  showSkeletons();
+  try {
+    const querySet = buildQuerySet(baseParams || { keywords: ['restaurants'], categories: [] });
+    const results = await mergedSearch(base, querySet, 20);
+    let filtered = applyClientFilters(results);
+
+// Verify hours & optionally filter out closed before rendering
+filtered = await verifyOpenStatuses(filtered);
+if (FLAGS.hideClosedAlways) {
+  filtered = filtered.filter(isActuallyOpen);
+}
+// Cache last results for offline-friendly fallback
+    if (FLAGS.cacheLastResults) {
+      try { localStorage.setItem(LAST_RESULTS_KEY, JSON.stringify({ ts: Date.now(), results: results })); } catch {}
     }
+
+    // Keep in memory for Share Top 3
+    window.__lastBusinesses = filtered;
+
+    renderBusinesses(filtered);
+    track("results_shown", { count: filtered.length });
+  } catch (e) {
+    // Offline-friendly fallback
+    const cached = (() => { try { return JSON.parse(localStorage.getItem(LAST_RESULTS_KEY) || "null"); } catch { return null; } })();
+    const list = document.getElementById("results-list");
+    if (cached?.results?.length) {
+      const note = `<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 mb-2">Network issue. Showing last saved results from this device.</div>`;
+      list.innerHTML = note;
+      window.__lastBusinesses = cached.results;
+      renderBusinesses(applyClientFilters(cached.results));
+    } else {
+      list.innerHTML = `<div class="p-4 border rounded-xl bg-white text-sm text-red-600">Error: ${e.message} <button id="retry-btn" class="ml-2 underline">Retry</button></div>`;
+      document.getElementById("retry-btn")?.addEventListener("click", () => doSearch(overrides));
+    }
+    track("results_error", { message: String(e && e.message || e) });
   }
 }
 
@@ -677,80 +620,51 @@ function showSkeletons() {
 
 
 /* ==============================
-   ROLL AGAIN (reshuffle within current constraints)
+   HOURS VERIFICATION (Yelp Business Details)
 ============================== */
-const rollBtn = document.getElementById("roll-again-btn");
-function rollAgain(){
-  if (!FLAGS.enableRollAgain) return;
-  const list = (window.__lastBusinesses || []).slice();
-  if (!list.length) return;
-  list.forEach(b => { b.__j = computeScore(b) + (Math.random() - 0.5) * 0.05; });
-  list.sort((a,b) => (b.__j - a.__j));
-  renderBusinesses(list);
-  track("roll_again", { count: list.length });
-}
-rollBtn?.addEventListener("click", rollAgain);
-
-
-/* ==============================
-   SEARCH PIPELINE (robust doSearch)
-============================== */
-async function doSearch(overrides = {}) {
+async function fetchYelpDetails(id) {
   try {
-    // Read latest filters & base params
-    readFilters();
-    baseParams = mapAnswersToParams();
-
-    // Build Yelp params safely
-    const params = {
-      sort_by: currentSort || "best_match",
-      open_now: !!openNow,
-      radius: currentRadius || 8000,
-      limit: 20,
-      price: baseParams?.price,
-      transactions: baseParams?.transactions
-    };
-
-    const cats = Array.isArray(baseParams?.categories) ? baseParams.categories.filter(Boolean) : [];
-    if (cats.length) params.categories = cats.join(",");
-
-    const terms = Array.isArray(baseParams?.keywords) ? baseParams.keywords.filter(Boolean) : [];
-    if (terms.length) params.term = terms.join(" ");
-
-    if (lastGeo && typeof lastGeo.latitude === "number" && typeof lastGeo.longitude === "number") {
-      params.latitude = lastGeo.latitude;
-      params.longitude = lastGeo.longitude;
-    } else if (lastLocation) {
-      params.location = lastLocation;
-    }
-
-    // Perform search
-    const results = await callYelp({ ...params, ...overrides });
-
-    // Apply client filters + local rerank + open-first bias (if not filtering by open_now)
-    let filtered = applyClientFilters(results);
-    filtered = localRerank(filtered);
-    if (!openNow) {
-      filtered.sort((a,b) => {
-        const ao = isActuallyOpen(a) ? 1 : 0;
-        const bo = isActuallyOpen(b) ? 1 : 0;
-        if (bo !== ao) return bo - ao;
-        return computeScore(b) - computeScore(a);
-      });
-    }
-
-    // Cache and render
-    window.__lastBusinesses = filtered.slice();
-    renderBusinesses(filtered);
-    track("view_results", { count: filtered.length, sort: currentSort });
-  } catch (err) {
-    console.error("doSearch failed", err);
-    const list = document.getElementById("results-list");
-    if (list) list.innerHTML = `<div class="p-4 border rounded-xl bg-red-50 text-red-800">` +
-      `<div class="font-semibold mb-1">Search error</div>` +
-      `<p class="text-sm">${(err && (err.message || err.toString())) || "Something went wrong."}</p>` +
-      `</div>`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const resp = await fetch('/.netlify/functions/yelp-details', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error(String(resp.status));
+    return await resp.json();
+  } catch (e) {
+    return null;
   }
+}
+function mergeHoursFromDetails(b, det) {
+  if (!det) return b;
+  const out = { ...b };
+  out.__verified = true;
+  if (typeof det.is_closed === "boolean") out.__is_closed = det.is_closed;
+  const detOpen = (Array.isArray(det?.hours) && det.hours[0] && typeof det.hours[0].is_open_now === "boolean")
+    ? det.hours[0].is_open_now
+    : (typeof det.is_open_now === "boolean" ? det.is_open_now : undefined);
+  if (typeof detOpen === "boolean") out.__is_open_now = detOpen;
+  return out;
+}
+async function verifyOpenStatuses(list, cap = 12) {
+  if (!FLAGS.enableHoursVerification) return list;
+  const arr = Array.isArray(list) ? list.slice(0, cap) : [];
+  const rest = Array.isArray(list) ? list.slice(cap) : [];
+  const out = [];
+  const conc = 4;
+  for (let i = 0; i < arr.length; i += conc) {
+    const chunk = arr.slice(i, i + conc);
+    const res = await Promise.all(chunk.map(async b => {
+      try { const det = await fetchYelpDetails(b.id); return mergeHoursFromDetails(b, det); }
+      catch { return b; }
+    }));
+    out.push(...res);
+  }
+  return out.concat(rest);
 }
 
 /* ==============================
@@ -888,6 +802,29 @@ document.getElementById("restart-btn")?.addEventListener("click", () => {
   showQuestion();
   updateQuestionProgress();
 });
+
+
+/* ==============================
+   QUIZ BOOTSTRAP SAFEGUARD
+   Ensures the first question renders even if an earlier init didn't fire.
+============================== */
+(function bootstrapQuizOnce(){
+  try {
+    const titleEl = document.getElementById("question-title");
+    const ans = document.getElementById("answer-buttons");
+    const needs = !titleEl?.textContent?.trim() || !(ans?.children?.length > 0);
+    if (needs && typeof showQuestion === "function") {
+      showQuestion();
+      setTimeout(() => {
+        const t2 = document.getElementById("question-title");
+        const a2 = document.getElementById("answer-buttons");
+        if ((!t2?.textContent?.trim() || !(a2?.children?.length > 0)) && typeof showQuestion === "function") {
+          showQuestion();
+        }
+      }, 120);
+    }
+  } catch {}
+})();
 
 /* ==============================
    INIT
