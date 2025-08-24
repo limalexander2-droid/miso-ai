@@ -127,27 +127,6 @@ const questions = [
   { question: "How are you eating today?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "Doesn’t matter"] },
   { question: "Who’s eating?", options: ["Just me", "A few friends", "Date night", "Big group / family", "Doesn’t matter"] }
 ];
-/* ==============================
-   TIME-OF-DAY CONTEXT
-============================== */
-function getTimeBucket(d = new Date()) {
-  try {
-    const h = d.getHours();
-    if (h >= 5 && h < 11) return "this morning";
-    if (h >= 11 && h < 16) return "this afternoon";
-    if (h >= 16 && h < 22) return "tonight";
-    return "late night";
-  } catch { return "right now"; }
-}
-// Update first question copy to be time-aware (keeps 'What vibe' for compatibility)
-try {
-  if (Array.isArray(questions) && questions[0] && typeof questions[0].question === "string") {
-    const suffix = getTimeBucket();
-    // Keep 'What vibe' so existing mapping 'includes("What vibe")' still works
-    questions[0].question = `What vibe ${suffix}?`;
-  }
-} catch {}
-
 
 /* ==============================
    EMOJI MAPPER + PROGRESS
@@ -308,8 +287,6 @@ function expandedSearchTerms(rawTerms) {
 }
 
 function mapAnswersToParams() {
-  const __timeBucket = (typeof getTimeBucket === "function") ? getTimeBucket() : "right now";
-
   const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
   const mood = find("What vibe");
   const craving = find("Leaning toward");
@@ -331,13 +308,9 @@ function mapAnswersToParams() {
   if (/Vegan/.test(diet)) tokens.push("vegan");
   if (/Gluten-Free/.test(diet)) tokens.push("gluten free");
   if (/Keto/.test(diet)) tokens.push("keto");
-  \1
-  // Time-of-day gentle hints (keywords only; do not restrict categories)
-  if (/morning/.test(__timeBucket)) { tokens.push("breakfast", "brunch", "coffee", "bakery"); }
-  else if (/afternoon/.test(__timeBucket)) { tokens.push("lunch", "cafe"); }
-  else if (/tonight/.test(__timeBucket)) { tokens.push("dinner"); }
-  else if (/late night/.test(__timeBucket)) { tokens.push("late night"); }
-let price = undefined;
+  if (/High-Protein/.test(diet)) tokens.push("protein");
+
+  let price = undefined;
   if (budget === "Under $10") price = "1";
   else if (budget === "$10–$20") price = "1,2";
   else if (budget === "$20–$40") price = "2,3";
@@ -603,9 +576,6 @@ function generateWhyChips(b){
     if (!kk || kk.length < 3) continue;
     if (cats.includes(kk)) { chips.push(`Matches “${k}”`); break; }
   }
-  const aliases = (b.categories||[]).map(c => (typeof c==="string"?c:(c.alias||c.title||""))).map(s => String(s).toLowerCase());
-  if (aliases.includes("breakfast_brunch")) chips.push("Brunch spot");
-  if (aliases.includes("coffee") || aliases.includes("cafes")) chips.push("Good for coffee");
   if (isIndependent(b)) chips.push("Local favorite");
   return chips.slice(0, 4);
 }
