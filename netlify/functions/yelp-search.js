@@ -1,126 +1,72 @@
-// netlify/functions/yelp-search.js
-const API = "https://api.yelp.com/v3";
-const SEARCH = `${API}/businesses/search`;
+// Netlify function: /.netlify/functions/yelp-search
+// Minimal proxy to Yelp Fusion (or your chosen API).
+// - Normalizes hours info into { open_status, has_hours }
+// - Filters out lodging/hotel categories (defense-in-depth)
+// - Caps to 10 results client-aligned
+//
+// Set YELP_API_KEY in Netlify env.
 
-const corsHeaders = {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
-export const handler = async (event) => {
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers: corsHeaders, body: "" };
-  }
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: "Method Not Allowed" }) };
-  }
-
+exports.handler = async (event) => {
   try {
-    if (!process.env.YELP_API_KEY) {
-      return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "Missing YELP_API_KEY in environment" }) };
-    }
-
+    if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method not allowed" };
     const body = JSON.parse(event.body || "{}");
-    let {
-      latitude,
-      longitude,
-      location,
-      term = "restaurants",
-      terms = [],
-      price,
-      radius = 8000,
-      open_now = false,
-      sort_by = "best_match",
-      limit = 20,
-      filters = {}
+    const {
+      term, categories, location, latitude, longitude, radius = 8000,
+      price, sort_by = "best_match", open_now = true, limit = 20, transactions
     } = body;
 
-    // Build term from array if provided
-    const finalTerm = (Array.isArray(terms) && terms.length) ? terms.join(", ") : term;
-
     const params = new URLSearchParams();
-    if (latitude && longitude) {
-      params.set("latitude", String(latitude));
-      params.set("longitude", String(longitude));
-    } else {
-      const safeLocation = (location && String(location).trim()) || "San Antonio, TX";
-      params.set("location", safeLocation);
-    }
-    if (finalTerm) params.set("term", finalTerm);
-    if (radius) params.set("radius", String(radius));
-    params.set("limit", String(limit));
+    if (term) params.set("term", String(term));
+    if (categories) params.set("categories", String(categories));
+    if (location) params.set("location", String(location));
+    if (latitude && longitude) { params.set("latitude", String(latitude)); params.set("longitude", String(longitude)); }
+    if (radius) params.set("radius", Math.min(Number(radius), 40000));
+    if (price) params.set("price", String(price));
+    if (sort_by) params.set("sort_by", String(sort_by));
+    if (open_now) params.set("open_now", "true");
+    if (transactions && Array.isArray(transactions) && transactions.length) params.set("attributes", transactions.join(","));
+    params.set("limit", String(Math.min(Number(limit) || 20, 50)));
 
-    // server-side sort tweak for "nearby"
-    const nearby = !!filters.nearby;
-    params.set("sort_by", nearby ? "distance" : sort_by);
-
-    if (price) params.set("price", price);
-    if (open_now === true || filters.openNow === true) params.set("open_now", "true");
-
-    const sRes = await fetch(`${SEARCH}?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${process.env.YELP_API_KEY}` },
+    const resp = await fetch(`https://api.yelp.com/v3/businesses/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${process.env.YELP_API_KEY}` }
     });
-    if (!sRes.ok) {
-      const txt = await sRes.text().catch(() => "");
-      return { statusCode: sRes.status, headers: corsHeaders, body: JSON.stringify({ error: txt || "Yelp search failed" }) };
+    if (!resp.ok) {
+      const txt = await resp.text();
+      return { statusCode: resp.status, body: txt };
     }
-    const sData = await sRes.json();
-    const base = Array.isArray(sData.businesses) ? sData.businesses : [];
-    if (!base.length) {
-      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ businesses: [] }) };
-    }
+    const data = await resp.json();
 
-    const ids = base.map(b => b.id).slice(0, 30);
-    const details = await Promise.all(ids.map(id =>
-      fetch(`${API}/businesses/${id}`, { headers: { Authorization: `Bearer ${process.env.YELP_API_KEY}` } })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null)
-    ));
-    const dMap = new Map(details.filter(Boolean).map(d => [d.id, d]));
-
-    const normalized = base.map(b => {
-      const d = dMap.get(b.id);
-      const hasHours = !!(d && Array.isArray(d.hours) && d.hours[0]);
-      const isOpenNow = hasHours ? d.hours[0].is_open_now === true : null;
-
-      let open_status = "unknown";
-      if (isOpenNow === true) open_status = "open";
-      else if (isOpenNow === false) open_status = "closed";
-
-      const address =
-        d?.location?.display_address?.join(", ")
-        ?? b.location?.display_address?.join(", ")
-        ?? "";
-      const phone =
-        d?.display_phone
-        ?? b.display_phone
-        ?? b.phone
-        ?? "";
-
+    // Normalize + filter
+    const banned = /\b(hotel|motels?|hostels?|lodging|resorts?|bed\s*&\s*breakfast|b&b|guest\s*house|inns?)\b/i;
+    const businesses = (data.businesses || []).map((b) => {
+      const has_hours = Array.isArray(b.hours) || typeof b.is_closed === "boolean";
+      const open_status = typeof b.is_closed === "boolean" ? (b.is_closed ? "closed" : "open") :
+        (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean" ? (b.hours[0].is_open_now ? "open" : "closed") : "unknown");
+      const address = (b.location && (b.location.address1 || b.location.display_address?.join(", "))) || "";
       return {
-        id: b.id,
-        name: b.name,
-        url: b.url,
-        image_url: b.image_url,
-        rating: b.rating,
-        review_count: b.review_count,
-        price: b.price,
-        categories: (b.categories || []).map(c => c.title),
-        distance: b.distance,
-        phone,
+        id: b.id, name: b.name, url: b.url,
+        rating: b.rating, review_count: b.review_count,
+        price: b.price, phone: b.display_phone || b.phone,
+        distance: b.distance, image_url: b.image_url,
+        categories: b.categories,
+        coordinates: b.coordinates,
         address,
-        coords: b.coordinates,
-        open_status,
-        has_hours: hasHours,
+        is_open_now: b.hours?.[0]?.is_open_now ?? !b.is_closed,
+        open_status, has_hours
       };
+    }).filter(b => {
+      const catText = (b.categories || []).map(c => (c.alias || c.title || "")).join(" , ").toLowerCase();
+      const name = (b.name || "").toLowerCase();
+      return !(banned.test(catText) || banned.test(name));
     });
 
-    const businesses = (open_now || filters.openNow) ? normalized.filter(n => n.open_status === "open") : normalized;
+    // Cap to 10 as a safety net
+    const capped = businesses.slice(0, 10);
 
-    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ businesses }) };
+    return { statusCode: 200, body: JSON.stringify({ businesses: capped }) };
   } catch (err) {
-    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, body: String(err && err.message || err) };
   }
 };
