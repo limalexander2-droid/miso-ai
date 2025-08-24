@@ -12,7 +12,9 @@ const FLAGS = {
   enableReranker: true, 
   enableWhyChips: true, 
   enableRollAgain: true, 
-  enableFastPath: false};
+  enableFastPath: false, 
+  enableHoursVerification: true, 
+  hideClosedAlways: true};
 
 /* ==============================
    SETTINGS
@@ -353,11 +355,19 @@ function toggleSave(b) {
 }
 
 function hoursOrCallLine(b) {
+  if (b && b.__verified) {
+    if (b.__is_closed === true) return "⏰ Closed now";
+    if (b.__is_open_now === true) return "⏰ Open now";
+    if (b.__is_open_now === false) return "⏰ Closed now";
+  }
   if (b.has_hours) {
     if (b.open_status === "open") return "⏰ Open now";
     if (b.open_status === "closed") return "⏰ Closed now";
     return "⏰ Hours available";
   }
+  if (b.phone) return `Hours not listed — tap to call 📞`;
+  return "Hours not listed";
+}
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
@@ -607,6 +617,11 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 function isActuallyOpen(b) {
+  // Prefer verified fields if present
+  if (b && b.__verified) {
+    if (b.__is_closed === true) return false;
+    if (typeof b.__is_open_now === "boolean") return b.__is_open_now;
+  }
   if (typeof b.open_status === "string") return b.open_status === "open";
   if (typeof b.is_open_now === "boolean") return b.is_open_now;
   if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
@@ -739,10 +754,14 @@ async function doSearch(overrides = {}) {
       });
     }
 
-    // Cache and render
-    window.__lastBusinesses = filtered.slice();
-    renderBusinesses(filtered);
-    track("view_results", { count: filtered.length, sort: currentSort });
+    // Verify hours, optionally hide closed, then render
+    let verified = await verifyOpenStatuses(filtered);
+    if (FLAGS.hideClosedAlways) {
+      verified = verified.filter(isActuallyOpen);
+    }
+    window.__lastBusinesses = verified.slice();
+    renderBusinesses(verified);
+    track("view_results", { count: verified.length, sort: currentSort });
   } catch (err) {
     console.error("doSearch failed", err);
     const list = document.getElementById("results-list");
@@ -751,6 +770,59 @@ async function doSearch(overrides = {}) {
       `<p class="text-sm">${(err && (err.message || err.toString())) || "Something went wrong."}</p>` +
       `</div>`;
   }
+}
+
+
+/* ==============================
+   HOURS VERIFICATION (Business Details) 
+   - Fetches fresh is_open_now / is_closed and merges into results.
+   - Fails silently if your backend endpoint doesn't exist.
+============================== */
+async function fetchYelpDetails(id) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const resp = await fetch('/.netlify/functions/yelp-details', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error(String(resp.status));
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+function mergeHoursFromDetails(b, det) {
+  if (!det) return b;
+  const out = { ...b };
+  out.__verified = true;
+  if (typeof det.is_closed === "boolean") out.__is_closed = det.is_closed;
+  const detailsIsOpen = (det?.hours && Array.isArray(det.hours) && det.hours[0] && typeof det.hours[0].is_open_now === "boolean")
+    ? det.hours[0].is_open_now
+    : (typeof det.is_open_now === "boolean" ? det.is_open_now : undefined);
+  if (typeof detailsIsOpen === "boolean") out.__is_open_now = detailsIsOpen;
+  return out;
+}
+async function verifyOpenStatuses(list, cap = 12) {
+  if (!FLAGS.enableHoursVerification) return list;
+  const arr = Array.isArray(list) ? list.slice(0, cap) : [];
+  const rest = Array.isArray(list) ? list.slice(cap) : [];
+  // Fetch details in parallel (bounded)
+  const chunks = [];
+  const conc = 4;
+  for (let i = 0; i < arr.length; i += conc) chunks.push(arr.slice(i, i + conc));
+  const out = [];
+  for (const chunk of chunks) {
+    const res = await Promise.all(chunk.map(async (b) => {
+      try { return mergeHoursFromDetails(b, await fetchYelpDetails(b.id)); }
+      catch { return b; }
+    }));
+    out.push(...res);
+  }
+  return out.concat(rest);
 }
 
 /* ==============================
