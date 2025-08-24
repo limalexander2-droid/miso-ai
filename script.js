@@ -9,9 +9,6 @@ const FLAGS = {
   relaxWhenEmpty: true,
   cacheLastResults: true
 , 
-  enableHoursVerification: true, 
-  hideClosedAlways: true, 
-  labelOpenNeedsVerification: true, 
   enableFastPath: false};
 
 /* ==============================
@@ -176,12 +173,10 @@ function loadLastPrefs() {
   try { return JSON.parse(localStorage.getItem(LAST_PREFS_KEY) || "null"); } catch { return null; }
 }
 function saveLastPrefs() {
-  if (!FLAGS.enableFastPath) return;
   const prefs = { answers, ts: Date.now(), group: !!groupModeChk?.checked };
   try { localStorage.setItem(LAST_PREFS_KEY, JSON.stringify(prefs)); } catch {}
 }
 function maybeShowFastPath() {
-  if (!FLAGS.enableFastPath) return;
   const last = loadLastPrefs();
   if (last && Array.isArray(last.answers) && last.answers.length) {
     fastPath?.classList.remove("hidden");
@@ -295,14 +290,11 @@ function toggleSave(b) {
 }
 
 function hoursOrCallLine(b) {
-  const trustedOpen = (b && b.__verified && b.__is_open_now === true && b.__is_closed !== true);
-  const trustedClosed = (b && b.__verified && (b.__is_closed === true || b.__is_open_now === false));
-  if (trustedOpen) return "⏰ Open now";
-  if (trustedClosed) return "⏰ Closed now";
-  if (b.has_hours) return "⏰ Hours available";
-  if (b.phone) return `Hours not listed — tap to call 📞`;
-  return "Hours not listed";
-}
+  if (b.has_hours) {
+    if (b.open_status === "open") return "⏰ Open now";
+    if (b.open_status === "closed") return "⏰ Closed now";
+    return "⏰ Hours available";
+  }
   if (b.phone) return `Hours not listed — tap to call 📞`;
   return "Hours not listed";
 }
@@ -467,17 +459,9 @@ function isHotelLike(b) {
   return banned.test(asText) || banned.test(name);
 }
 function isActuallyOpen(b) {
-  if (!b) return false;
-  if (b.__verified) {
-    if (b.__is_closed === true) return false;
-    if (typeof b.__is_open_now === "boolean") return b.__is_open_now;
-  }
-  try {
-    if (typeof openNow !== "undefined" && openNow === true) {
-      if (typeof b.is_open_now === "boolean") return b.is_open_now;
-      if (typeof b.open_status === "string") return b.open_status === "open";
-    }
-  } catch {}
+  if (typeof b.open_status === "string") return b.open_status === "open";
+  if (typeof b.is_open_now === "boolean") return b.is_open_now;
+  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
   return false;
 }
 
@@ -569,12 +553,7 @@ async function doSearch(overrides = {}) {
     const results = await mergedSearch(base, querySet, 20);
     let filtered = applyClientFilters(results);
 
-// Verify hours & optionally filter out closed before rendering
-filtered = await verifyOpenStatuses(filtered);
-if (FLAGS.hideClosedAlways) {
-  filtered = filtered.filter(isActuallyOpen);
-}
-// Cache last results for offline-friendly fallback
+    // Cache last results for offline-friendly fallback
     if (FLAGS.cacheLastResults) {
       try { localStorage.setItem(LAST_RESULTS_KEY, JSON.stringify({ ts: Date.now(), results: results })); } catch {}
     }
@@ -616,55 +595,6 @@ function showSkeletons() {
       </div>`;
     list.appendChild(card);
   }
-}
-
-
-/* ==============================
-   HOURS VERIFICATION (Yelp Business Details)
-============================== */
-async function fetchYelpDetails(id) {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 6000);
-    const resp = await fetch('/.netlify/functions/yelp-details', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-      signal: ctrl.signal
-    });
-    clearTimeout(timer);
-    if (!resp.ok) throw new Error(String(resp.status));
-    return await resp.json();
-  } catch (e) {
-    return null;
-  }
-}
-function mergeHoursFromDetails(b, det) {
-  if (!det) return b;
-  const out = { ...b };
-  out.__verified = true;
-  if (typeof det.is_closed === "boolean") out.__is_closed = det.is_closed;
-  const detOpen = (Array.isArray(det?.hours) && det.hours[0] && typeof det.hours[0].is_open_now === "boolean")
-    ? det.hours[0].is_open_now
-    : (typeof det.is_open_now === "boolean" ? det.is_open_now : undefined);
-  if (typeof detOpen === "boolean") out.__is_open_now = detOpen;
-  return out;
-}
-async function verifyOpenStatuses(list, cap = 12) {
-  if (!FLAGS.enableHoursVerification) return list;
-  const arr = Array.isArray(list) ? list.slice(0, cap) : [];
-  const rest = Array.isArray(list) ? list.slice(cap) : [];
-  const out = [];
-  const conc = 4;
-  for (let i = 0; i < arr.length; i += conc) {
-    const chunk = arr.slice(i, i + conc);
-    const res = await Promise.all(chunk.map(async b => {
-      try { const det = await fetchYelpDetails(b.id); return mergeHoursFromDetails(b, det); }
-      catch { return b; }
-    }));
-    out.push(...res);
-  }
-  return out.concat(rest);
 }
 
 /* ==============================
@@ -806,25 +736,27 @@ document.getElementById("restart-btn")?.addEventListener("click", () => {
 
 /* ==============================
    QUIZ BOOTSTRAP SAFEGUARD
-   Ensures the first question renders even if an earlier init didn't fire.
 ============================== */
-(function bootstrapQuizOnce(){
+(function ensureFirstQuestion(){
   try {
-    const titleEl = document.getElementById("question-title");
-    const ans = document.getElementById("answer-buttons");
-    const needs = !titleEl?.textContent?.trim() || !(ans?.children?.length > 0);
-    if (needs && typeof showQuestion === "function") {
+    const need = !document.getElementById("question-title")?.textContent?.trim()
+               || !(document.getElementById("answer-buttons")?.children?.length > 0);
+    if (need && typeof showQuestion === "function") {
       showQuestion();
       setTimeout(() => {
-        const t2 = document.getElementById("question-title");
-        const a2 = document.getElementById("answer-buttons");
-        if ((!t2?.textContent?.trim() || !(a2?.children?.length > 0)) && typeof showQuestion === "function") {
-          showQuestion();
-        }
+        const titleOk = !!document.getElementById("question-title")?.textContent?.trim();
+        const buttonsOk = (document.getElementById("answer-buttons")?.children?.length > 0);
+        if ((!titleOk || !buttonsOk) && typeof showQuestion === "function") showQuestion();
       }, 120);
     }
   } catch {}
 })();
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const buttonsOk = (document.getElementById("answer-buttons")?.children?.length > 0);
+    if (!buttonsOk && typeof showQuestion === "function") showQuestion();
+  } catch {}
+});
 
 /* ==============================
    INIT
