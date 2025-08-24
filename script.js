@@ -41,19 +41,19 @@ function updateQuestionProgress() {
 }
 
 /* ==============================
-   QUIZ QUESTIONS (upgraded)
+   QUIZ QUESTIONS
 ============================== */
 const questions = [
-  { question: "When are you eating?", options: ["Now (0–30 min)", "Soon (30–90 min)", "Later (2–4 hrs)"] },
-  { question: "How do you want to eat?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "No preference"] },
-  { question: "How far will you go?", options: ["Walkable", "<10 min", "15–30 min", "I'll go anywhere"] },
-  { question: "Budget per person?", options: ["$ (cheap)", "$$", "$$$", "$$$$"] },
-  { question: "What sounds good right now?", options: ["Savory / Umami", "Fresh & light", "Spicy", "Comfort / Hearty", "Sweet / Dessert", "Seafood / Sushi", "Veg-forward"] },
-  { question: "Any protein preference?", options: ["Chicken", "Beef", "Seafood", "Plant-based", "No preference"] },
-  { question: "Any diet needs?", options: ["Vegan", "Vegetarian", "Gluten-free", "Low-carb / Keto", "High-protein", "No restrictions"] },
-  { question: "Occasion or vibe?", options: ["Quick bite", "Casual hang", "Group-friendly", "Game on TV / Sports bar", "Date night", "Celebration / Upscale"] },
-  { question: "Familiar vs adventurous?", options: ["Keep it classic", "Surprise me"] },
-  { question: "Any extras you care about?", options: ["Patio", "Bar seating / TVs", "Quiet / low-noise", "Kid-friendly", "None"] }
+  { question: "How hungry are you right now?", options: ["Just a little hungry", "Pretty hungry", "Starving", "Planning ahead"] },
+  { question: "How much time do you have to eat?", options: ["Less than 15 minutes", "About 30 minutes", "An hour or more", "No rush"] },
+  { question: "Who are you eating with?", options: ["Just me", "With a friend or partner", "Small group (3–4)", "Big group or family", "Doesn’t matter"] },
+  { question: "What’s your current mood?", options: ["Cozy / comfort food", "Energized / healthy", "Indulgent / treat yourself", "Adventurous", "Chill / no strong cravings"] },
+  { question: "Are you craving anything specific?", options: ["Spicy", "Sweet", "Hot and hearty", "Fresh and light", "No specific craving"] },
+  { question: "Any dietary goals or restrictions?", options: ["Weight loss / low-cal", "Vegetarian / Vegan", "Gluten-Free", "Low-Carb / Keto", "High-Protein", "No restrictions"] },
+  { question: "How much are you looking to spend?", options: ["Under $10", "$10–$20", "$20–$40", "Money’s not a concern"] },
+  { question: "How far are you willing to go?", options: ["Walking distance", "Short drive (under 10 mins)", "15–30 mins", "I'll go anywhere"] },
+  { question: "How would you like to eat today?", options: ["Dine-in", "Takeout", "Delivery", "Drive-thru", "Doesn’t matter"] },
+  { question: "Any special occasion or vibe?", options: ["Just a regular meal", "Quick lunch break", "Date night", "Post-workout", "Comfort after a long day", "Celebration"] }
 ];
 
 /* ==============================
@@ -86,16 +86,15 @@ async function transitionQuestion(renderFn) {
 }
 
 const emojiMap = [
-  { match: /When are you eating\?/i, emoji: '⏱️' },
-  { match: /How do you want to eat\?/i, emoji: '🍽️' },
-  { match: /How far will you go\?/i, emoji: '🗺️' },
-  { match: /Budget per person\?/i, emoji: '💸' },
-  { match: /What sounds good right now\?/i, emoji: '🍔' },
-  { match: /protein preference/i, emoji: '🍗' },
-  { match: /diet needs/i, emoji: '🥦' },
-  { match: /Occasion or vibe/i, emoji: '✨' },
-  { match: /Familiar vs adventurous/i, emoji: '🧭' },
-  { match: /Any extras/i, emoji: '🎛️' },
+  { match: /hungry|time|plan/i, emoji: '⏱️' },
+  { match: /who|with/i, emoji: '👥' },
+  { match: /mood|comfort|healthy/i, emoji: '🥗' },
+  { match: /craving|spicy|sweet/i, emoji: '🍔' },
+  { match: /diet|keto|protein|gluten/i, emoji: '🥦' },
+  { match: /spend|budget|price/i, emoji: '💸' },
+  { match: /distance|far|drive/i, emoji: '🗺️' },
+  { match: /eat today|dine|delivery|takeout/i, emoji: '🍽️' },
+  { match: /special|occasion|vibe|date/i, emoji: '✨' },
 ];
 function setQuestionEmoji(text) {
   const el = document.getElementById('question-emoji');
@@ -269,99 +268,58 @@ function expandedSearchTerms(rawTerms) {
 }
 
 /* ==============================
-   MAP ANSWERS -> keywords + categories (upgraded)
+   MAP ANSWERS -> keywords + categories
 ============================== */
 function mapAnswersToParams() {
-  const get = (q) => answers.find(a => a.question.includes(q))?.answer || "";
+  const find = (qText) => answers.find(a => a.question.includes(qText))?.answer || "";
 
-  const when      = get("When are you eating?");
-  const how       = get("How do you want to eat?");
-  const far       = get("How far will you go?");
-  const budget    = get("Budget per person?");
-  const flavor    = get("What sounds good right now?");
-  const protein   = get("Any protein preference?");
-  const diet      = get("Any diet needs?");
-  const vibe      = get("Occasion or vibe?");
-  const explore   = get("Familiar vs adventurous?");
-  const extras    = get("Any extras you care about?");
+  const craving = find("Are you craving anything specific?");
+  const mood = find("What’s your current mood?");
+  const diet = find("Any dietary goals or restrictions?");
+  const budget = find("How much are you looking to spend?");
+  const distance = find("How far are you willing to go?");
+  const method = find("How would you like to eat today?");
 
-  // --- BASE CONTROLS ---
-  // open_now preference from "When"
-  const open_now = /Now/.test(when);
+  // topic tokens from answers
+  let baseTokens = [];
+  if (craving === "Spicy") baseTokens.push("spicy");
+  else if (craving === "Sweet") baseTokens.push("sweet");
+  else if (craving === "Hot and hearty") baseTokens.push("comfort");
+  else if (craving === "Fresh and light") baseTokens.push("healthy");
+  else baseTokens.push("restaurants"); // safe default
+
+  if (/healthy/i.test(mood)) baseTokens.push("healthy");
+  if (/Adventurous/i.test(mood)) baseTokens.push("international");
+  if (/Indulgent/i.test(mood)) baseTokens.push("sweet");
+
+  if (/Vegetarian/.test(diet)) baseTokens.push("vegetarian");
+  if (/Vegan/.test(diet)) baseTokens.push("vegan");
+  if (/Gluten-Free/.test(diet)) baseTokens.push("gluten free");
+  if (/Low-Carb|Keto/.test(diet)) baseTokens.push("keto");
+  if (/High-Protein/.test(diet)) baseTokens.push("protein");
+
+  // price
+  let price = undefined;
+  if (budget === "Under $10") price = "1";
+  else if (budget === "$10–$20") price = "1,2";
+  else if (budget === "$20–$40") price = "2,3";
+  else if (budget === "Money’s not a concern") price = "1,2,3,4";
+
+  // radius
+  let radius = 8000;
+  if (distance === "Walking distance") radius = 800;
+  else if (distance.includes("under 10")) radius = 3000;
+  else if (distance.includes("15–30")) radius = 8000;
+  else if (distance.includes("anywhere")) radius = 16000;
 
   // transactions
   let transactions = [];
-  if (how === "Delivery") transactions = ["delivery"];
-  else if (how === "Takeout") transactions = ["pickup"];
-  // Drive-thru has no Yelp transaction; bias via terms.
+  if (method === "Delivery") transactions = ["delivery"];
+  else if (method === "Takeout") transactions = ["pickup"];
 
-  // radius
-  const radius =
-    far === "Walkable"   ? 800  :
-    far === "<10 min"    ? 3000 :
-    far === "15–30 min"  ? 8000 :
-                           16000;
+  const { keywords, categories } = expandedSearchTerms(baseTokens);
 
-  // price
-  const price =
-    budget === "$ (cheap)" ? "1" :
-    budget === "$$"        ? "1,2" :
-    budget === "$$$"       ? "2,3" :
-    budget === "$$$$"      ? "1,2,3,4" : undefined;
-
-  // --- SIGNAL PACKS ---
-  const kws  = new Set();
-  const cats = new Set();
-
-  // Flavor direction
-  if (flavor === "Savory / Umami") { ["bbq","burgers","noodles"].forEach(c => cats.add(c)); kws.add("grill"); }
-  if (flavor === "Fresh & light")   { ["healthy"].forEach(c => cats.add(c)); }
-  if (flavor === "Spicy")           { ["thai","szechuan","indpak"].forEach(c => cats.add(c)); kws.add("spicy"); }
-  if (flavor === "Comfort / Hearty"){ ["comfortfood","southern"].forEach(c => cats.add(c)); }
-  if (flavor === "Sweet / Dessert") { ["desserts","icecream","frozenyogurt","gelato","bakeries"].forEach(c => cats.add(c)); }
-  if (flavor === "Seafood / Sushi") { ["seafood","sushi"].forEach(c => cats.add(c)); }
-  if (flavor === "Veg-forward")     { ["vegetarian","vegan"].forEach(c => cats.add(c)); }
-
-  // Protein
-  if (protein === "Chicken")      kws.add("chicken");
-  if (protein === "Beef")         kws.add("steak");
-  if (protein === "Seafood")      cats.add("seafood");
-  if (protein === "Plant-based") { cats.add("vegan"); cats.add("vegetarian"); }
-
-  // Diet
-  if (diet === "Vegan")        cats.add("vegan");
-  if (diet === "Vegetarian")   cats.add("vegetarian");
-  if (diet === "Gluten-free")  cats.add("gluten_free");
-  if (diet === "Low-carb / Keto") { kws.add("keto"); kws.add("bowl"); }
-  if (diet === "High-protein") { kws.add("protein bowl"); kws.add("grill"); }
-
-  // Occasion / vibe
-  if (vibe === "Quick bite") { kws.add("fast food"); kws.add("counter service"); }
-  if (vibe === "Group-friendly") { kws.add("family style"); }
-  if (vibe === "Game on TV / Sports bar") { kws.add("sports bar"); }
-  if (vibe === "Date night") { kws.add("wine bar"); }
-  if (vibe === "Celebration / Upscale") { kws.add("steakhouse"); }
-
-  // Familiar vs adventurous
-  if (explore === "Keep it classic") { ["pizza","burgers","mexican"].forEach(t => kws.add(t)); }
-  if (explore === "Surprise me")     { ["thai","indpak","korean","szechuan","japanese","vietnamese"].forEach(c => cats.add(c)); }
-
-  // Extras
-  if (extras === "Patio") kws.add("patio");
-  if (extras === "Bar seating / TVs") kws.add("sports bar");
-  if (extras === "Quiet / low-noise") kws.add("cafe");
-  if (extras === "Kid-friendly") kws.add("kid friendly");
-
-  // Drive-thru bias
-  if (how === "Drive-thru") { kws.add("drive thru"); cats.add("burgers"); }
-
-  // Always include a safe default
-  cats.add("restaurants");
-
-  // Feed into expansion
-  const { keywords, categories } = expandedSearchTerms([...cats, ...kws]);
-
-  return { keywords, categories, price, radius, transactions, open_now };
+  return { keywords, categories, price, radius, transactions };
 }
 
 /* ==============================
@@ -386,9 +344,6 @@ function toggleWidenFab(show) {
 function renderBusinesses(businesses = []) {
   const list = document.getElementById("results-list");
   list.innerHTML = "";
-
-  // cap to 10 results
-  businesses = (businesses || []).slice(0, 10);
 
   if (!businesses.length) {
     toggleWidenFab(true);
@@ -436,7 +391,7 @@ function renderBusinesses(businesses = []) {
    YELP INTEGRATION + CONTROLS
 ============================== */
 let currentSort = "best_match";
-let openNow = false;         // UI toggle; also set from "When are you eating?" if Now
+let openNow = false;         // default off for better hit rate; user can toggle on
 let currentRadius = 8000;
 let lastGeo = null;
 let lastLocation = null;
@@ -450,39 +405,10 @@ function readFilters() {
   return filterState;
 }
 
-// Block lodging-type businesses from results
-function isHotelLike(b) {
-  const rawCats = Array.isArray(b.categories) ? b.categories : [];
-  const asText = rawCats
-    .map(c => (typeof c === 'string' ? c : (c.alias || c.title || '')))
-    .join(' , ')
-    .toLowerCase();
-  const name = (b.name || '').toLowerCase();
-
-  const banned = /\b(hotel|motels?|hostels?|lodging|resorts?|bed\s*&\s*breakfast|b&b|guest\s*house|inns?)\b/;
-  return banned.test(asText) || banned.test(name);
-}
-
-// True only if the business is currently open
-function isActuallyOpen(b) {
-  if (typeof b.open_status === "string") return b.open_status === "open"; // normalized by backend
-  if (typeof b.is_open_now === "boolean") return b.is_open_now;          // fallback if provided
-  if (b.hours && b.hours[0] && typeof b.hours[0].is_open_now === "boolean") return b.hours[0].is_open_now;
-  return false;
-}
-
 function applyClientFilters(items) {
   let list = [...items];
-
-  // remove hotels/inns
-  list = list.filter(b => !isHotelLike(b));
-
-  // enforce Open now strictly when toggled
-  if (openNow) list = list.filter(isActuallyOpen);
-
   if (filterState.highRated) list = list.filter(b => (b.rating || 0) >= 4.5);
-  if (filterState.budget)    list = list.filter(b => !b.price || b.price.length <= 2);
-
+  if (filterState.budget) list = list.filter(b => !b.price || b.price.length <= 2);
   return list;
 }
 
@@ -507,21 +433,22 @@ function uniqById(items) {
   return [...map.values()];
 }
 
+// Build a few valid query variants (term OR categories per request)
 function buildQuerySet(baseParams) {
   const qs = [];
   const kw = (baseParams.keywords || []).slice(0, 6);
-  const catSet = new Set((baseParams.categories || []).slice(0, 5));
-  catSet.add('restaurants'); // ensure restaurant focus
-  const catList = [...catSet];
-  if (catList.length) qs.push({ categories: catList.join(",") });
+  const cat = (baseParams.categories || []).slice(0, 5);
 
-  // primary combined keyword term
+  // 1) primary combined keyword term
   if (kw.length) qs.push({ term: kw.slice(0, 3).join(" ") });
 
-  // single-strong keywords
+  // 2) single-strong keywords
   kw.slice(0, 4).forEach(w => qs.push({ term: w }));
 
-  // generic fallback
+  // 3) categories (comma-separated)
+  if (cat.length) qs.push({ categories: cat.join(",") });
+
+  // 4) generic fallback
   qs.push({ term: "restaurants" });
 
   // de-dup
@@ -622,7 +549,6 @@ async function initYelpResults() {
   const ratingBtn = document.getElementById("sort-rating");
   const distanceBtn = document.getElementById("sort-distance");
   const openChk = document.getElementById("open-now");
-  openNow = !!openChk?.checked; // sync initial UI state
   const widenBtn = document.getElementById("btn-widen");
   const widenFab = document.getElementById("try-radius-fab");
   const hiChk = document.getElementById("filter-highrated");
@@ -650,12 +576,6 @@ async function initYelpResults() {
 
   // Base params from answers
   baseParams = mapAnswersToParams();
-
-  // If quiz said "Now", force Open now on and reflect in UI
-  if (baseParams.open_now) {
-    openNow = true;
-    if (openChk) openChk.checked = true;
-  }
 
   // Try geolocation first
   const geo = await new Promise((resolve) => {
